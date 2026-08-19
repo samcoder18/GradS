@@ -44,7 +44,7 @@ describe('deployment build', () => {
     expect(packageJson.scripts['test:db']).toBe('supabase test db');
     expect(supabaseConfig).toMatch(/project_id\s*=\s*"audit-tracker"/);
     expect(supabaseConfig).toMatch(/major_version\s*=\s*17/);
-    expect(databaseTest).toContain('select plan(55);');
+    expect(databaseTest).toContain('select plan(72);');
     expect(databaseTest).toContain('select * from finish();');
   });
 
@@ -63,8 +63,8 @@ describe('deployment build', () => {
       const html = await readFile(join(outputDirectory, 'index.html'), 'utf8');
       const client = await readFile(join(outputDirectory, 'src/client.js'), 'utf8');
 
-      expect(rootFiles.sort()).toEqual(['audit-report.md', 'index.html', 'src', 'styles.css']);
-      expect(sourceFiles.sort()).toEqual(['app.js', 'client.js', 'config.js', 'domain.js']);
+      expect(rootFiles.sort()).toEqual(['audit-report.md', 'index.html', 'roadmap-report.md', 'src', 'styles.css']);
+      expect(sourceFiles.sort()).toEqual(['app.js', 'client.js', 'config.js', 'domain.js', 'roadmap.js']);
       expect(config).toContain('SUPABASE_URL = "https://audit-project.supabase.co"');
       expect(config).toContain('SUPABASE_ANON_KEY = "public-anon-key"');
       expect(config).not.toMatch(/service[_-]?role|SUPABASE_DB_URL/i);

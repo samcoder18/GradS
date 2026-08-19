@@ -5,9 +5,11 @@ const runtimeFiles = [
   'index.html',
   'styles.css',
   'audit-report.md',
+  'roadmap-report.md',
   'src/app.js',
   'src/client.js',
   'src/domain.js',
+  'src/roadmap.js',
 ];
 
 function publicConfiguration(environment = process.env) {

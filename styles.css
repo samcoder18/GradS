@@ -117,6 +117,34 @@ summary:focus-visible {
   background: rgb(255 253 248 / 72%);
 }
 
+.workspace-tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(255 253 248 / 72%);
+}
+
+.workspace-tabs button {
+  min-height: 2.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.45rem 1rem;
+  font-weight: 750;
+}
+
+.workspace-tabs button[aria-pressed="true"] {
+  background: var(--accent);
+  color: white;
+}
+
+[data-workspace-panel] > .view-tabs {
+  margin-top: 1.25rem;
+}
+
 .view-tabs button {
   min-height: 2.5rem;
   border: 0;
@@ -349,6 +377,11 @@ h3 {
   background: #5d6074;
 }
 
+.task-card.roadmap-task::before,
+.task-card.roadmap-task .priority-badge {
+  background: #39735a;
+}
+
 .board-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem);
@@ -486,6 +519,84 @@ textarea {
   line-height: 1.55;
 }
 
+.roadmap-iteration-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.roadmap-iteration-card {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface-muted);
+  padding: 0.8rem;
+}
+
+.roadmap-iteration-card span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.roadmap-iteration-card span:last-child {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.roadmap-stage-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.roadmap-stage {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.roadmap-stage summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  cursor: pointer;
+  padding: 1rem;
+}
+
+.roadmap-stage summary > span:not(.count-badge) {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.roadmap-stage[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.roadmap-stage-body {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.roadmap-stage-group {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.roadmap-stage-group h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.roadmap-stage-group > .button {
+  justify-self: start;
+}
+
 .compact-completion,
 .completion-control {
   display: inline-flex;
@@ -602,6 +713,12 @@ dialog::backdrop {
 
 .dialog-heading {
   align-items: start;
+}
+
+.dialog-context {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .dialog-actions {
@@ -796,6 +913,7 @@ dialog::backdrop {
 @media (max-width: 720px) {
   .site-header {
     min-height: 4rem;
+    flex-wrap: wrap;
   }
 
   .brand > span:last-child {
@@ -827,6 +945,28 @@ dialog::backdrop {
 
   .filters {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .roadmap-iteration-progress {
+    grid-template-columns: 1fr;
+  }
+
+  .roadmap-stage summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .roadmap-stage summary .count-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .workspace-tabs {
+    flex: 1;
+    justify-content: stretch;
+  }
+
+  .workspace-tabs button {
+    flex: 1;
   }
 
   .search-field {

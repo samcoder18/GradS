@@ -13,6 +13,15 @@ import {
   parseAuditReport,
   parseMarkdownBlocks,
 } from './client.js';
+import {
+  ROADMAP_ITERATIONS,
+  ROADMAP_STAGES,
+  filterRoadmapTasks,
+  roadmapIterationProgress,
+  roadmapProgress,
+  roadmapStageGroups,
+  roadmapStageTitle,
+} from './roadmap.js';
 
 const DISPLAY_NAME_KEY = 'audit-tracker-display-name';
 const MUTATION_CONTROL_SELECTOR = [
@@ -23,10 +32,13 @@ const MUTATION_CONTROL_SELECTOR = [
   '#new-task-form button[type="submit"]',
   '#board-comment-form textarea',
   '#board-comment-form button[type="submit"]',
+  '#roadmap-board-comment-form textarea',
+  '#roadmap-board-comment-form button[type="submit"]',
   '#task-comment-form textarea',
   '#task-comment-form button[type="submit"]',
   '#drawer-completed',
   '[data-complete-task]',
+  '[data-create-roadmap-task]',
 ].join(', ');
 
 function element(document, tag, className, text) {
@@ -145,10 +157,17 @@ export function createAuditApp({
   api,
   initializationError = null,
   reportMarkdown = '',
+  roadmapMarkdown = '',
   setIntervalFn = window.setInterval.bind(window),
   clearIntervalFn = window.clearInterval.bind(window),
 }) {
   const nodes = {
+    auditWorkspace: document.querySelector('#audit-workspace'),
+    roadmapWorkspace: document.querySelector('#roadmap-workspace'),
+    workspaceTabs: [...document.querySelectorAll('[data-workspace-tab]')],
+    trackerTab: document.querySelector('#tracker-tab'),
+    roadmapTrackerTab: document.querySelector('#roadmap-tracker-tab'),
+    roadmapStrategyTab: document.querySelector('#roadmap-strategy-tab'),
     status: document.querySelector('#app-status'),
     initializationError: document.querySelector('#initialization-error'),
     initializationErrorTitle: document.querySelector('#initialization-error-title'),
@@ -168,11 +187,29 @@ export function createAuditApp({
     boardCommentForm: document.querySelector('#board-comment-form'),
     boardComment: document.querySelector('#board-comment'),
     boardCommentError: document.querySelector('#board-comment-error'),
+    roadmapStatus: document.querySelector('#roadmap-status'),
+    roadmapTaskList: document.querySelector('#roadmap-stage-list'),
+    roadmapSearch: document.querySelector('#roadmap-search'),
+    roadmapStageFilter: document.querySelector('#roadmap-stage-filter'),
+    roadmapStatusFilter: document.querySelector('#roadmap-status-filter'),
+    roadmapCompletedCount: document.querySelector('#roadmap-completed-count'),
+    roadmapTotalCount: document.querySelector('#roadmap-total-count'),
+    roadmapProgressPercent: document.querySelector('#roadmap-progress-percent'),
+    roadmapProgressTrack: document.querySelector('#roadmap-tracker .progress-track'),
+    roadmapProgressFill: document.querySelector('#roadmap-progress-fill'),
+    roadmapIterationProgress: document.querySelector('#roadmap-iteration-progress'),
+    roadmapBoardComments: document.querySelector('#roadmap-board-comments'),
+    roadmapBoardCommentCount: document.querySelector('#roadmap-board-comment-count'),
+    roadmapBoardCommentForm: document.querySelector('#roadmap-board-comment-form'),
+    roadmapBoardComment: document.querySelector('#roadmap-board-comment'),
+    roadmapBoardCommentError: document.querySelector('#roadmap-board-comment-error'),
     newTaskDialog: document.querySelector('#new-task-dialog'),
     newTaskForm: document.querySelector('#new-task-form'),
     newTaskName: document.querySelector('#new-task-name'),
     newTaskDescription: document.querySelector('#new-task-description'),
     newTaskPriority: document.querySelector('#new-task-priority'),
+    newTaskPriorityField: document.querySelector('#new-task-priority-field'),
+    newTaskContext: document.querySelector('#new-task-context'),
     newTaskNameError: document.querySelector('#new-task-name-error'),
     nameDialog: document.querySelector('#display-name-dialog'),
     nameForm: document.querySelector('#display-name-form'),
@@ -183,6 +220,10 @@ export function createAuditApp({
     drawerTitle: document.querySelector('#drawer-title'),
     drawerDescription: document.querySelector('#drawer-description'),
     drawerCompleted: document.querySelector('#drawer-completed'),
+    drawerCompletionControl: document.querySelector('.completion-control'),
+    drawerCompletionNote: document.querySelector('#drawer-completion-note'),
+    taskAuditLinksSection: document.querySelector('#task-audit-links-section'),
+    taskAuditLinks: document.querySelector('#task-audit-links'),
     taskEvents: document.querySelector('#task-events'),
     taskComments: document.querySelector('#task-comments'),
     taskCommentCount: document.querySelector('#task-comment-count'),
@@ -198,6 +239,8 @@ export function createAuditApp({
   let eventsBound = false;
   let refreshPromise = null;
   let mutationPending = false;
+  let activeWorkspace = 'audit';
+  let newTaskContext = { track: 'audit', roadmapStage: null, roadmapIteration: null };
   const mutationsAvailable = Boolean(api) && !initializationError;
   const dialogStack = [];
 
@@ -222,6 +265,8 @@ export function createAuditApp({
   function setStatus(message, kind = 'ready') {
     nodes.status.textContent = message;
     nodes.status.dataset.state = kind;
+    nodes.roadmapStatus.textContent = activeWorkspace === 'roadmap' ? message : '';
+    nodes.roadmapStatus.dataset.state = kind;
   }
 
   function setMutationPending(pending) {
@@ -229,7 +274,7 @@ export function createAuditApp({
     for (const control of document.querySelectorAll(MUTATION_CONTROL_SELECTOR)) {
       control.disabled = pending || !mutationsAvailable;
     }
-    for (const form of [nodes.newTaskForm, nodes.boardCommentForm, nodes.taskCommentForm]) {
+    for (const form of [nodes.newTaskForm, nodes.boardCommentForm, nodes.roadmapBoardCommentForm, nodes.taskCommentForm]) {
       form.setAttribute('aria-busy', String(pending));
     }
   }
@@ -241,7 +286,8 @@ export function createAuditApp({
   }
 
   function renderProgress() {
-    const progress = auditProgress(board.tasks);
+    const auditTasks = board.tasks.filter((task) => task.track === 'audit');
+    const progress = auditProgress(auditTasks);
     nodes.completedCount.textContent = String(progress.completed);
     nodes.totalCount.textContent = String(progress.total);
     nodes.progressPercent.textContent = `${progress.percent}%`;
@@ -249,7 +295,7 @@ export function createAuditApp({
     nodes.progressFill.style.width = `${progress.percent}%`;
     nodes.priorityProgress.replaceChildren();
 
-    for (const item of priorityProgress(board.tasks)) {
+    for (const item of priorityProgress(auditTasks)) {
       const card = element(document, 'div', `priority-stat priority-${item.priority.toLowerCase()}`);
       const label = element(document, 'strong', null, item.priority);
       const value = element(document, 'span', null, `${item.completed}/${item.total}`);
@@ -294,13 +340,36 @@ export function createAuditApp({
       return;
     }
 
-    nodes.drawerPriority.textContent = `${task.priority} · задача ${task.position}`;
+    const isDerivedRoadmapTask = task.track === 'roadmap' && task.completion_mode === 'derived';
+    nodes.drawerPriority.textContent = task.track === 'roadmap'
+      ? `Этап ${task.roadmap_stage} · Итерация ${task.roadmap_iteration}`
+      : `${task.priority} · задача ${task.position}`;
     nodes.drawerTitle.textContent = task.title;
     nodes.drawerDescription.textContent = task.description || 'Описание не добавлено.';
     nodes.drawerCompleted.checked = task.completed;
-    nodes.drawerCompleted.disabled = mutationPending || !mutationsAvailable;
-    nodes.drawerCompleted.setAttribute('aria-label', completionActionLabel(task));
-    nodes.drawerCompleted.dataset.completeTask = task.id;
+    nodes.drawerCompletionControl.hidden = isDerivedRoadmapTask;
+    nodes.drawerCompletionNote.hidden = !isDerivedRoadmapTask;
+    nodes.drawerCompletionNote.textContent = isDerivedRoadmapTask
+      ? 'Статус рассчитывается по связанным задачам аудита.'
+      : '';
+    nodes.drawerCompleted.disabled = isDerivedRoadmapTask || mutationPending || !mutationsAvailable;
+    if (isDerivedRoadmapTask) {
+      delete nodes.drawerCompleted.dataset.completeTask;
+    } else {
+      nodes.drawerCompleted.setAttribute('aria-label', completionActionLabel(task));
+      nodes.drawerCompleted.dataset.completeTask = task.id;
+    }
+    nodes.taskAuditLinks.replaceChildren();
+    nodes.taskAuditLinksSection.hidden = !isDerivedRoadmapTask;
+    for (const auditLink of task.audit_links ?? []) {
+      const item = element(document, 'li', 'event-item');
+      const openAudit = element(document, 'button', 'task-title-button', auditLink.title);
+      openAudit.type = 'button';
+      openAudit.dataset.openAuditTask = auditLink.id;
+      const state = element(document, 'span', null, auditLink.completed ? 'Выполнена' : 'Открыта');
+      item.append(openAudit, state);
+      nodes.taskAuditLinks.append(item);
+    }
     nodes.taskEvents.replaceChildren();
     if (!task.events.length) {
       nodes.taskEvents.append(element(document, 'li', 'empty-state', 'История пока пуста.'));
@@ -323,33 +392,27 @@ export function createAuditApp({
     renderComments(nodes.taskComments, task.comments, 'Комментариев пока нет.');
   }
 
-  function renderTasks() {
-    const tasks = filterTasks(board.tasks, {
-      priority: nodes.priorityFilter.value,
-      status: nodes.statusFilter.value,
-      search: nodes.search.value,
-    });
-    nodes.taskList.replaceChildren();
-
-    if (!tasks.length) {
-      appendEmpty(document, nodes.taskList, board.tasks.length ? 'По этим фильтрам задач нет.' : 'Нет задач. Добавьте первую.');
-      return;
-    }
-
-    for (const task of tasks) {
-      const card = element(document, 'article', `task-card priority-${task.priority.toLowerCase()}${task.completed ? ' is-complete' : ''}`);
-      const top = element(document, 'div', 'task-card-top');
-      const priority = element(document, 'span', 'priority-badge', task.priority);
-      const state = element(document, 'span', 'task-state', task.completed ? 'Выполнена' : 'Открыта');
-      top.append(priority, state);
-      const title = element(document, 'h3');
-      const open = element(document, 'button', 'task-title-button', task.title);
-      open.type = 'button';
-      open.dataset.openTask = task.id;
-      title.append(open);
-      const description = element(document, 'p', 'task-description', task.description || 'Описание не добавлено.');
-      const footer = element(document, 'div', 'task-card-footer');
-      const meta = element(document, 'span', null, `${task.comments.length} комм. · ${task.events.length} событий`);
+  function renderTaskCard(task) {
+    const isRoadmap = task.track === 'roadmap';
+    const isDerived = isRoadmap && task.completion_mode === 'derived';
+    const priorityClass = isRoadmap ? 'roadmap-task' : `priority-${task.priority.toLowerCase()}`;
+    const card = element(document, 'article', `task-card ${priorityClass}${task.completed ? ' is-complete' : ''}`);
+    const top = element(document, 'div', 'task-card-top');
+    const label = element(document, 'span', 'priority-badge', isRoadmap ? `Этап ${task.roadmap_stage}` : task.priority);
+    const state = element(document, 'span', 'task-state', task.completed ? 'Выполнена' : isDerived ? 'Из аудита' : 'Открыта');
+    top.append(label, state);
+    const title = element(document, 'h3');
+    const open = element(document, 'button', 'task-title-button', task.title);
+    open.type = 'button';
+    open.dataset.openTask = task.id;
+    title.append(open);
+    const description = element(document, 'p', 'task-description', task.description || (isRoadmap ? `Итерация ${task.roadmap_iteration}` : 'Описание не добавлено.'));
+    const footer = element(document, 'div', 'task-card-footer');
+    const meta = element(document, 'span', null, `${(task.comments ?? []).length} комм. · ${(task.events ?? []).length} событий`);
+    footer.append(meta);
+    if (isDerived) {
+      footer.append(element(document, 'span', 'task-state', `${(task.audit_links ?? []).length} связей`));
+    } else {
       const completion = element(document, 'label', 'compact-completion');
       const checkbox = element(document, 'input');
       checkbox.type = 'checkbox';
@@ -357,41 +420,139 @@ export function createAuditApp({
       checkbox.disabled = mutationPending || !mutationsAvailable;
       checkbox.setAttribute('aria-label', completionActionLabel(task));
       checkbox.dataset.completeTask = task.id;
-      const completionText = element(document, 'span', null, 'Готово');
-      completion.append(checkbox, completionText);
-      footer.append(meta, completion);
-      card.append(top, title, description, footer);
-      nodes.taskList.append(card);
+      completion.append(checkbox, element(document, 'span', null, 'Готово'));
+      footer.append(completion);
+    }
+    card.append(top, title, description, footer);
+    return card;
+  }
+
+  function renderTasks() {
+    const auditTasks = board.tasks.filter((task) => task.track === 'audit');
+    const tasks = filterTasks(auditTasks, {
+      priority: nodes.priorityFilter.value,
+      status: nodes.statusFilter.value,
+      search: nodes.search.value,
+    });
+    nodes.taskList.replaceChildren();
+
+    if (!tasks.length) {
+      appendEmpty(document, nodes.taskList, auditTasks.length ? 'По этим фильтрам задач нет.' : 'Нет задач. Добавьте первую.');
+      return;
+    }
+
+    for (const task of tasks) nodes.taskList.append(renderTaskCard(task));
+  }
+
+  function stageIterationOptions(stage) {
+    if (stage === 1) return [1];
+    if (stage === 2) return [1, 2, 3];
+    if (stage === 8) return [3];
+    return [2];
+  }
+
+  function renderRoadmap() {
+    const allRoadmapTasks = board.tasks.filter((task) => task.track === 'roadmap');
+    const progress = roadmapProgress(allRoadmapTasks);
+    nodes.roadmapCompletedCount.textContent = String(progress.completed);
+    nodes.roadmapTotalCount.textContent = String(progress.total);
+    nodes.roadmapProgressPercent.textContent = `${progress.percent}%`;
+    nodes.roadmapProgressTrack.setAttribute('aria-valuenow', String(progress.percent));
+    nodes.roadmapProgressFill.style.width = `${progress.percent}%`;
+    nodes.roadmapIterationProgress.replaceChildren();
+    for (const iteration of ROADMAP_ITERATIONS) {
+      const value = roadmapIterationProgress(allRoadmapTasks, iteration.iteration);
+      const card = element(document, 'div', 'roadmap-iteration-card');
+      card.append(
+        element(document, 'strong', null, `Итерация ${iteration.iteration}`),
+        element(document, 'span', null, iteration.title),
+        element(document, 'span', null, `${value.completed}/${value.total}`),
+      );
+      nodes.roadmapIterationProgress.append(card);
+    }
+
+    const visibleTasks = filterRoadmapTasks(allRoadmapTasks, {
+      stage: nodes.roadmapStageFilter.value,
+      status: nodes.roadmapStatusFilter.value,
+      search: nodes.roadmapSearch.value,
+    });
+    nodes.roadmapTaskList.replaceChildren();
+    for (const { stage, title } of ROADMAP_STAGES) {
+      const stageTasks = allRoadmapTasks.filter((task) => task.roadmap_stage === stage);
+      const stageProgress = roadmapProgress(stageTasks);
+      const details = element(document, 'details', 'roadmap-stage');
+      details.open = stage === 0;
+      const summary = document.createElement('summary');
+      summary.append(
+        element(document, 'strong', null, `Этап ${stage}`),
+        element(document, 'span', null, title),
+        element(document, 'span', 'count-badge', `${stageProgress.completed}/${stageProgress.total}`),
+      );
+      details.append(summary);
+      const body = element(document, 'div', 'roadmap-stage-body');
+      const groups = roadmapStageGroups(allRoadmapTasks, stage);
+      const groupsByIteration = new Map(groups.map((group) => [group.iteration, group]));
+      for (const iteration of stageIterationOptions(stage)) {
+        const group = groupsByIteration.get(iteration) ?? { iteration, tasks: [] };
+        const groupTasks = visibleTasks
+          .filter((task) => task.roadmap_stage === stage && task.roadmap_iteration === iteration)
+          .sort((left, right) => left.position - right.position);
+        const groupContainer = element(document, 'div', 'roadmap-stage-group');
+        if (stage === 2) groupContainer.append(element(document, 'h3', null, `Итерация ${iteration}`));
+        const list = element(document, 'div', 'task-list roadmap-task-list');
+        if (!groupTasks.length) appendEmpty(document, list, 'По этим фильтрам задач нет.');
+        else for (const task of groupTasks) list.append(renderTaskCard(task));
+        const add = element(document, 'button', 'button button-quiet', 'Добавить задачу');
+        add.type = 'button';
+        add.dataset.createRoadmapTask = '';
+        add.dataset.roadmapStage = String(stage);
+        add.dataset.roadmapIteration = String(group.iteration);
+        groupContainer.append(list, add);
+        body.append(groupContainer);
+      }
+      details.append(body);
+      nodes.roadmapTaskList.append(details);
     }
   }
 
   function renderBoard() {
     renderProgress();
     renderTasks();
+    renderRoadmap();
     nodes.boardCommentCount.textContent = String(board.comments.length);
     renderComments(nodes.boardComments, board.comments, 'В общем чате пока тихо.');
+    nodes.roadmapBoardCommentCount.textContent = String(board.comments.length);
+    renderComments(nodes.roadmapBoardComments, board.comments, 'В общем чате пока тихо.');
     renderDrawer();
   }
 
-  function renderReport() {
-    const report = parseAuditReport(reportMarkdown);
-    const title = document.querySelector('#report-title');
-    const introduction = document.querySelector('#report-introduction');
-    const navigation = document.querySelector('#report-navigation');
-    const disclosures = document.querySelector('#report-disclosures');
-    title.textContent = report.title || 'Технический аудит';
+  function renderReportDocument(markdown, {
+    titleSelector,
+    introductionSelector,
+    navigationSelector,
+    disclosuresSelector,
+    fallbackTitle,
+    idPrefix,
+  }) {
+    const report = parseAuditReport(markdown);
+    const title = document.querySelector(titleSelector);
+    const introduction = document.querySelector(introductionSelector);
+    const navigation = document.querySelector(navigationSelector);
+    const disclosures = document.querySelector(disclosuresSelector);
+    title.textContent = report.title || fallbackTitle;
     renderMarkdown(document, introduction, report.introduction);
     navigation.replaceChildren();
     disclosures.replaceChildren();
     const navList = element(document, 'ol');
 
     for (const section of report.sections) {
+      const sectionId = `${idPrefix}${section.id}`;
       const navItem = element(document, 'li');
       const link = element(document, 'a', null, section.title);
-      link.href = `#${section.id}`;
+      link.href = `#${sectionId}`;
       link.addEventListener('click', (event) => {
         event.preventDefault();
-        const target = document.querySelector(`#${section.id}`);
+        const target = document.querySelector(`#${sectionId}`);
         target?.setAttribute('open', '');
         target?.querySelector('summary')?.focus({ preventScroll: true });
         target?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
@@ -400,7 +561,7 @@ export function createAuditApp({
       navList.append(navItem);
 
       const details = element(document, 'details', 'report-section');
-      details.id = section.id;
+      details.id = sectionId;
       const summary = document.createElement('summary');
       summary.append(element(document, 'h2', null, section.title));
       const body = element(document, 'div', 'report-body');
@@ -411,17 +572,49 @@ export function createAuditApp({
     navigation.append(navList);
   }
 
+  function renderReport() {
+    renderReportDocument(reportMarkdown, {
+      titleSelector: '#report-title',
+      introductionSelector: '#report-introduction',
+      navigationSelector: '#report-navigation',
+      disclosuresSelector: '#report-disclosures',
+      fallbackTitle: 'Технический аудит',
+      idPrefix: 'audit-',
+    });
+  }
+
+  function renderRoadmapStrategy() {
+    renderReportDocument(roadmapMarkdown, {
+      titleSelector: '#roadmap-strategy-title',
+      introductionSelector: '#roadmap-strategy-introduction',
+      navigationSelector: '#roadmap-strategy-navigation',
+      disclosuresSelector: '#roadmap-strategy-disclosures',
+      fallbackTitle: 'Стратегия развития',
+      idPrefix: 'roadmap-',
+    });
+  }
+
   async function refresh({ silent = false } = {}) {
     if (!api || typeof api.snapshot !== 'function') return false;
     if (refreshPromise) return refreshPromise;
     refreshPromise = (async () => {
       if (!silent) setStatus('Загрузка общей доски…', 'loading');
       nodes.taskList.setAttribute('aria-busy', 'true');
+      nodes.roadmapTaskList.setAttribute('aria-busy', 'true');
       try {
         const snapshot = await api.snapshot();
         board = {
           board: snapshot?.board ?? null,
-          tasks: Array.isArray(snapshot?.tasks) ? snapshot.tasks : [],
+          tasks: Array.isArray(snapshot?.tasks)
+            ? snapshot.tasks.map((task) => ({
+              ...task,
+              track: task.track ?? 'audit',
+              completion_mode: task.completion_mode ?? 'manual',
+              events: Array.isArray(task.events) ? task.events : [],
+              comments: Array.isArray(task.comments) ? task.comments : [],
+              audit_links: Array.isArray(task.audit_links) ? task.audit_links : [],
+            }))
+            : [],
           comments: Array.isArray(snapshot?.comments) ? snapshot.comments : [],
         };
         renderBoard();
@@ -433,6 +626,7 @@ export function createAuditApp({
         if (!board.tasks.length) appendEmpty(document, nodes.taskList, 'Доска сейчас недоступна. Попробуйте обновить страницу.');
       } finally {
         nodes.taskList.setAttribute('aria-busy', 'false');
+        nodes.roadmapTaskList.setAttribute('aria-busy', 'false');
         refreshPromise = null;
       }
     })();
@@ -498,13 +692,36 @@ export function createAuditApp({
     openManagedDialog(nodes.drawer, document.querySelector('[data-close-drawer]'));
   }
 
+  function switchWorkspace(workspace) {
+    activeWorkspace = workspace;
+    nodes.auditWorkspace.hidden = workspace !== 'audit';
+    nodes.roadmapWorkspace.hidden = workspace !== 'roadmap';
+    for (const tab of nodes.workspaceTabs) {
+      tab.setAttribute('aria-pressed', String(tab.dataset.workspaceTab === workspace));
+    }
+    nodes.roadmapStatus.textContent = workspace === 'roadmap' ? nodes.status.textContent : '';
+  }
+
   function switchTab(tab) {
-    for (const candidate of document.querySelectorAll('[role="tab"]')) {
+    const tablist = tab.closest('[role="tablist"]');
+    for (const candidate of tablist.querySelectorAll('[role="tab"]')) {
       const selected = candidate === tab;
       candidate.setAttribute('aria-selected', String(selected));
       candidate.tabIndex = selected ? 0 : -1;
       document.querySelector(`#${candidate.getAttribute('aria-controls')}`).hidden = !selected;
     }
+  }
+
+  function openNewTask(context = { track: 'audit', roadmapStage: null, roadmapIteration: null }) {
+    newTaskContext = context;
+    nodes.newTaskNameError.textContent = '';
+    const isRoadmap = context.track === 'roadmap';
+    nodes.newTaskDialog.dataset.track = context.track;
+    nodes.newTaskPriorityField.hidden = isRoadmap;
+    nodes.newTaskContext.textContent = isRoadmap
+      ? `Roadmap · этап ${context.roadmapStage} · итерация ${context.roadmapIteration}`
+      : 'Аудит · новая задача';
+    openManagedDialog(nodes.newTaskDialog, nodes.newTaskName);
   }
 
   function cancelNameRequest() {
@@ -525,14 +742,19 @@ export function createAuditApp({
     });
     document.querySelector('.brand').addEventListener('click', (event) => {
       event.preventDefault();
-      switchTab(document.querySelector('#tracker-tab'));
+      switchWorkspace('audit');
+      switchTab(nodes.trackerTab);
       document.querySelector('#main-content').scrollIntoView?.({ block: 'start' });
     });
+
+    for (const workspaceTab of nodes.workspaceTabs) {
+      workspaceTab.addEventListener('click', () => switchWorkspace(workspaceTab.dataset.workspaceTab));
+    }
 
     for (const tab of document.querySelectorAll('[role="tab"]')) {
       tab.addEventListener('click', () => switchTab(tab));
       tab.addEventListener('keydown', (event) => {
-        const tabs = [...document.querySelectorAll('[role="tab"]')];
+        const tabs = [...tab.closest('[role="tablist"]').querySelectorAll('[role="tab"]')];
         const index = tabs.indexOf(tab);
         let next = null;
         if (event.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
@@ -550,6 +772,9 @@ export function createAuditApp({
     for (const input of [nodes.search, nodes.priorityFilter, nodes.statusFilter]) {
       input.addEventListener(input === nodes.search ? 'input' : 'change', renderTasks);
     }
+    for (const input of [nodes.roadmapSearch, nodes.roadmapStageFilter, nodes.roadmapStatusFilter]) {
+      input.addEventListener(input === nodes.roadmapSearch ? 'input' : 'change', renderRoadmap);
+    }
 
     nodes.taskList.addEventListener('click', (event) => {
       const button = event.target.closest('[data-open-task]');
@@ -558,11 +783,35 @@ export function createAuditApp({
     nodes.taskList.addEventListener('change', (event) => {
       if (event.target.matches('[data-complete-task]')) void handleCompletion(event.target);
     });
+    nodes.roadmapTaskList.addEventListener('click', (event) => {
+      const open = event.target.closest('[data-open-task]');
+      if (open) {
+        showTask(open.dataset.openTask);
+        return;
+      }
+      const create = event.target.closest('[data-create-roadmap-task]');
+      if (create) {
+        openNewTask({
+          track: 'roadmap',
+          roadmapStage: Number(create.dataset.roadmapStage),
+          roadmapIteration: Number(create.dataset.roadmapIteration),
+        });
+      }
+    });
+    nodes.roadmapTaskList.addEventListener('change', (event) => {
+      if (event.target.matches('[data-complete-task]')) void handleCompletion(event.target);
+    });
     nodes.drawerCompleted.addEventListener('change', () => void handleCompletion(nodes.drawerCompleted));
+    nodes.taskAuditLinks.addEventListener('click', (event) => {
+      const openAudit = event.target.closest('[data-open-audit-task]');
+      if (!openAudit) return;
+      switchWorkspace('audit');
+      switchTab(nodes.trackerTab);
+      showTask(openAudit.dataset.openAuditTask);
+    });
     document.querySelector('[data-close-drawer]').addEventListener('click', () => closeManagedDialog(nodes.drawer));
     document.querySelector('#open-new-task').addEventListener('click', () => {
-      nodes.newTaskNameError.textContent = '';
-      openManagedDialog(nodes.newTaskDialog, nodes.newTaskName);
+      openNewTask();
     });
     for (const close of document.querySelectorAll('[data-close-dialog]')) {
       close.addEventListener('click', () => closeManagedDialog(close.closest('dialog')));
@@ -592,9 +841,13 @@ export function createAuditApp({
 
     nodes.newTaskForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const result = normalizeTaskInput({ title: nodes.newTaskName.value, priority: nodes.newTaskPriority.value });
+      const result = normalizeTaskInput({
+        title: nodes.newTaskName.value,
+        priority: nodes.newTaskPriority.value,
+        ...newTaskContext,
+      });
       if (!result.valid) {
-        nodes.newTaskNameError.textContent = result.errors.title ?? result.errors.priority ?? '';
+        nodes.newTaskNameError.textContent = result.errors.title ?? result.errors.priority ?? result.errors.roadmap ?? result.errors.track ?? '';
         return;
       }
       const saved = await performMutation((author) => api.createTask({
@@ -602,10 +855,14 @@ export function createAuditApp({
         title: result.value.title,
         description: nodes.newTaskDescription.value.trim(),
         priority: result.value.priority,
+        track: result.value.track ?? 'audit',
+        roadmapStage: result.value.roadmapStage ?? null,
+        roadmapIteration: result.value.roadmapIteration ?? null,
       }));
       if (saved) {
         nodes.newTaskForm.reset();
         nodes.newTaskPriority.value = 'P1';
+        newTaskContext = { track: 'audit', roadmapStage: null, roadmapIteration: null };
         closeManagedDialog(nodes.newTaskDialog);
       }
     });
@@ -617,6 +874,14 @@ export function createAuditApp({
       if (!result.valid) return;
       const saved = await performMutation((author) => api.addBoardComment({ author, body: result.value }));
       if (saved) nodes.boardCommentForm.reset();
+    });
+    nodes.roadmapBoardCommentForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const result = normalizeComment(nodes.roadmapBoardComment.value);
+      nodes.roadmapBoardCommentError.textContent = result.valid ? '' : result.error;
+      if (!result.valid) return;
+      const saved = await performMutation((author) => api.addBoardComment({ author, body: result.value }));
+      if (saved) nodes.roadmapBoardCommentForm.reset();
     });
     nodes.taskCommentForm.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -633,6 +898,12 @@ export function createAuditApp({
     });
     document.querySelector('#collapse-report').addEventListener('click', () => {
       for (const details of document.querySelectorAll('#report-disclosures details')) details.open = false;
+    });
+    document.querySelector('#expand-roadmap-strategy').addEventListener('click', () => {
+      for (const details of document.querySelectorAll('#roadmap-strategy-disclosures details')) details.open = true;
+    });
+    document.querySelector('#collapse-roadmap-strategy').addEventListener('click', () => {
+      for (const details of document.querySelectorAll('#roadmap-strategy-disclosures details')) details.open = false;
     });
   }
 
@@ -654,6 +925,7 @@ export function createAuditApp({
       if (started) return;
       started = true;
       renderReport();
+      renderRoadmapStrategy();
       renderBoard();
       bindEvents();
       document.addEventListener('keydown', handleDocumentKeydown);
@@ -667,6 +939,7 @@ export function createAuditApp({
         setStatus(initializationError.message, initializationError.kind);
         setMutationPending(false);
         nodes.taskList.setAttribute('aria-busy', 'false');
+        nodes.roadmapTaskList.setAttribute('aria-busy', 'false');
         appendEmpty(document, nodes.taskList, 'Совместная доска недоступна. Полный отчёт можно читать во вкладке «Отчёт».');
         return;
       }
@@ -725,13 +998,23 @@ async function bootstrap() {
     if (!response.ok) throw new Error('Не удалось загрузить файл отчёта.');
     return response.text();
   });
+  const roadmapPromise = fetch(new URL('../roadmap-report.md', import.meta.url)).then((response) => {
+    if (!response.ok) throw new Error('Не удалось загрузить файл стратегии.');
+    return response.text();
+  });
   const initialization = await initializeBoardApi({ hash: window.location.hash });
 
   let reportMarkdown = '';
+  let roadmapMarkdown = '';
   try {
     reportMarkdown = await reportPromise;
   } catch (error) {
     reportMarkdown = `# Технический аудит\n\n${error.message}`;
+  }
+  try {
+    roadmapMarkdown = await roadmapPromise;
+  } catch (error) {
+    roadmapMarkdown = `# Стратегия развития\n\n${error.message}`;
   }
   await createAuditApp({
     document,
@@ -739,6 +1022,7 @@ async function bootstrap() {
     api: initialization.api,
     initializationError: initialization.error,
     reportMarkdown,
+    roadmapMarkdown,
   }).start();
 }
 
