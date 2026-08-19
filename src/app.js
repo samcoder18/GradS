@@ -361,7 +361,15 @@ export function createAuditApp({
     setStatus('Сохраняем изменение…', 'loading');
     try {
       await action(author);
-      if (refreshPromise) await refreshPromise;
+      const staleRefresh = refreshPromise;
+      if (staleRefresh) {
+        try {
+          await staleRefresh;
+        } catch {
+          // A background refresh failure cannot change the result of a successful write.
+        }
+        if (refreshPromise === staleRefresh) refreshPromise = null;
+      }
       await refresh({ silent: true });
       setStatus('Изменение сохранено.');
       return true;

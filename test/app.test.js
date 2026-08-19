@@ -307,6 +307,46 @@ describe('audit tracker DOM client', () => {
     app.stop();
   });
 
+  test('ignores a rejected stale poll and still refreshes after a successful mutation', async () => {
+    const fresh = snapshot();
+    fresh.tasks[0].completed = true;
+    const api = {
+      snapshot: vi.fn()
+        .mockResolvedValueOnce(snapshot())
+        .mockResolvedValueOnce(snapshot())
+        .mockResolvedValueOnce(fresh),
+      createTask: vi.fn(),
+      setCompleted: vi.fn(async () => ({})),
+      addTaskComment: vi.fn(),
+      addBoardComment: vi.fn(),
+    };
+    const { app, dom, intervalCallback } = await setup({ apiOverride: api });
+    const { document } = dom.window;
+    const taskList = document.querySelector('#task-list');
+    const setAttribute = taskList.setAttribute.bind(taskList);
+    let rejectStalePoll = true;
+    taskList.setAttribute = (name, value) => {
+      if (rejectStalePoll && name === 'aria-busy' && value === 'false') {
+        rejectStalePoll = false;
+        throw new Error('Stale poll finalization failed');
+      }
+      setAttribute(name, value);
+    };
+
+    await expect(intervalCallback()).rejects.toThrow('Stale poll finalization failed');
+    const checkbox = document.querySelector('[data-complete-task="task-1"]');
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await settle();
+    await settle();
+
+    expect(api.setCompleted).toHaveBeenCalledTimes(1);
+    expect(api.snapshot).toHaveBeenCalledTimes(3);
+    expect(document.querySelector('[data-complete-task="task-1"]').checked).toBe(true);
+    expect(document.querySelector('#app-status').textContent).toBe('Изменение сохранено.');
+    app.stop();
+  });
+
   test('submits P1-default tasks and immutable task and board comments through the public API', async () => {
     const { app, calls, dom } = await setup();
     const { document } = dom.window;
