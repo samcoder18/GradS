@@ -23,13 +23,17 @@ describe('deployment build', () => {
   test('GitHub Pages workflow tests and uploads the generated runtime artifact', async () => {
     const workflow = await readFile(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
 
+    expect(workflow).toMatch(/permissions:\s*[\s\S]*pages:\s*write[\s\S]*id-token:\s*write/);
+    expect(workflow).toMatch(/concurrency:\s*[\s\S]*group:\s*github-pages/);
+    expect(workflow).toMatch(/SUPABASE_URL:\s*\$\{\{ vars\.SUPABASE_URL \}\}/);
+    expect(workflow).toMatch(/SUPABASE_ANON_KEY:\s*\$\{\{ vars\.SUPABASE_ANON_KEY \}\}/);
     expect(workflow).toMatch(/uses:\s*actions\/configure-pages@v\d+/);
     expect(workflow).toMatch(/uses:\s*actions\/upload-pages-artifact@v\d+/);
     expect(workflow).toMatch(/uses:\s*actions\/deploy-pages@v\d+/);
     expect(workflow).toMatch(/npm ci/);
     expect(workflow).toMatch(/npm test/);
     expect(workflow).toMatch(/npm run build/);
-    expect(workflow).toMatch(/path:\s*dist/);
+    expect(workflow).toMatch(/uses:\s*actions\/upload-pages-artifact@v\d+[\s\S]*?with:\s*\n\s*path:\s*dist\s*$/m);
   });
 
   test('emits only runtime assets and a public generated configuration', async () => {
@@ -70,6 +74,46 @@ describe('deployment build', () => {
       });
     } finally {
       await rm(join(outputDirectory, '..'), { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    { SUPABASE_URL: '', SUPABASE_ANON_KEY: 'public-anon-key' },
+    { SUPABASE_URL: 'https://audit-project.supabase.co', SUPABASE_ANON_KEY: '' },
+    { SUPABASE_URL: 'http://audit-project.supabase.co', SUPABASE_ANON_KEY: 'public-anon-key' },
+  ])('rejects unusable public configuration: %o', async (variables) => {
+    const outputDirectory = join(await mkdtemp(join(tmpdir(), 'audit-tracker-build-')), 'dist');
+
+    try {
+      await expect(execFileAsync(process.execPath, [buildScript], {
+        cwd: projectRoot,
+        env: buildEnvironment(outputDirectory, variables),
+      })).rejects.toMatchObject({ stderr: expect.stringMatching(/Missing public build configuration|valid HTTPS URL/) });
+    } finally {
+      await rm(join(outputDirectory, '..'), { recursive: true, force: true });
+    }
+  });
+
+  test('serializes generated public configuration without executable interpolation', async () => {
+    const outputDirectory = await mkdtemp(join(tmpdir(), 'audit-tracker-build-'));
+    const url = 'https://audit-project.supabase.co/path?label="quoted"';
+    const anonKey = 'public\\key\nwith "quotes"';
+
+    try {
+      await execFileAsync(process.execPath, [buildScript], {
+        cwd: projectRoot,
+        env: buildEnvironment(outputDirectory, { SUPABASE_URL: url, SUPABASE_ANON_KEY: anonKey }),
+      });
+
+      const config = await readFile(join(outputDirectory, 'src/config.js'), 'utf8');
+      const generated = await import(`${new URL(`file://${join(outputDirectory, 'src/config.js')}`).href}?cacheBust=${Date.now()}`);
+
+      expect(config).toContain(JSON.stringify(url));
+      expect(config).toContain(JSON.stringify(anonKey));
+      expect(generated.SUPABASE_URL).toBe(url);
+      expect(generated.SUPABASE_ANON_KEY).toBe(anonKey);
+    } finally {
+      await rm(outputDirectory, { recursive: true, force: true });
     }
   });
 });
