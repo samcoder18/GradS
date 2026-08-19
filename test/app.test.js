@@ -46,7 +46,7 @@ function snapshot() {
   };
 }
 
-async function setup({ storedName = 'Ada', snapshotValue = snapshot(), apiOverride } = {}) {
+async function setup({ storedName = 'Ada', snapshotValue = snapshot(), apiOverride, reportText = reportMarkdown } = {}) {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
   const dom = new JSDOM(html, { url: 'https://example.test/#board=abcdefghijklmnopqrstuvwxyz123456' });
   if (storedName) dom.window.localStorage.setItem('audit-tracker-display-name', storedName);
@@ -63,7 +63,7 @@ async function setup({ storedName = 'Ada', snapshotValue = snapshot(), apiOverri
     document: dom.window.document,
     window: dom.window,
     api,
-    reportMarkdown,
+    reportMarkdown: reportText,
     setIntervalFn(callback, delay) {
       intervalCallback = callback;
       expect(delay).toBe(20_000);
@@ -115,6 +115,70 @@ describe('audit tracker DOM client', () => {
     app.stop();
   });
 
+  test('renders Markdown report content as safe semantic DOM without interpreting raw HTML', async () => {
+    const semanticReport = [
+      '# Semantic audit',
+      '',
+      '**Date:** `2026-08-20`',
+      '',
+      '## Findings',
+      '',
+      '### Evidence',
+      '',
+      'Read the [primary source](https://example.test/evidence) and keep <script>alert(1)</script> as text.',
+      '',
+      '- First bullet',
+      '- Second **bold** bullet',
+      '',
+      '1. First action',
+      '2. Second action',
+      '',
+      '> Quoted `runtime` evidence.',
+      '',
+      '| Area | Result |',
+      '|---|---|',
+      '| Access | Failed |',
+    ].join('\n');
+    const { app, dom } = await setup({ reportText: semanticReport });
+    const { document } = dom.window;
+
+    expect(document.querySelector('#report-introduction strong')?.textContent).toBe('Date:');
+    expect(document.querySelector('#report-introduction code')?.textContent).toBe('2026-08-20');
+    expect(document.querySelector('#report-introduction').textContent).not.toMatch(/\*\*|`/);
+    expect(document.querySelector('#report-disclosures h2')?.textContent).toBe('Findings');
+    expect(document.querySelector('#report-disclosures h3')?.textContent).toBe('Evidence');
+    expect(document.querySelectorAll('#report-disclosures ul > li')).toHaveLength(2);
+    expect(document.querySelectorAll('#report-disclosures ol > li')).toHaveLength(2);
+    expect(document.querySelector('#report-disclosures blockquote')?.textContent).toContain('Quoted runtime evidence.');
+    expect(document.querySelector('#report-disclosures table thead th')?.textContent).toBe('Area');
+    expect(document.querySelector('#report-disclosures table tbody td')?.textContent).toBe('Access');
+    expect(document.querySelector('#report-disclosures a')?.href).toBe('https://example.test/evidence');
+    expect(document.querySelector('#report-disclosures script')).toBeNull();
+    expect(document.querySelector('#report-disclosures').textContent).toContain('<script>alert(1)</script>');
+    expect(document.querySelector('#report-disclosures pre')).toBeNull();
+    app.stop();
+  });
+
+  test('renders every table and list from the checked-in audit report with HTML semantics', async () => {
+    const fullReport = await readFile(new URL('../audit-report.md', import.meta.url), 'utf8');
+    const { app, dom } = await setup({ reportText: fullReport });
+    const { document } = dom.window;
+
+    expect(document.querySelectorAll('#report-disclosures table')).toHaveLength(3);
+    expect(document.querySelectorAll('#report-disclosures table thead')).toHaveLength(3);
+    expect(document.querySelectorAll('#report-disclosures table tbody')).toHaveLength(3);
+    expect(document.querySelectorAll('#report-disclosures ul')).not.toHaveLength(0);
+    expect(document.querySelectorAll('#report-disclosures ol')).not.toHaveLength(0);
+    expect(document.querySelectorAll('#report-disclosures h2')).toHaveLength(11);
+    expect(document.querySelectorAll('#report-disclosures h3')).not.toHaveLength(0);
+    expect(document.querySelectorAll('#report-introduction strong')).toHaveLength(4);
+    expect(document.querySelector('#report-introduction code')).not.toBeNull();
+    expect(document.querySelector('#report-introduction').textContent).not.toMatch(/\*\*|`/);
+    expect(document.querySelector('#report-disclosures').textContent).not.toContain('|---|');
+    expect(document.querySelector('#report-disclosures pre')).toBeNull();
+    app.stop();
+  });
+
   test('keeps the capability token for skip, brand, and report navigation', async () => {
     const { app, dom } = await setup();
     const { document } = dom.window;
@@ -159,6 +223,25 @@ describe('audit tracker DOM client', () => {
 
     expect(calls).toContainEqual(['setCompleted', { author: 'Ada', taskId: 'task-1', completed: true }]);
     expect(api.snapshot).toHaveBeenCalledTimes(2);
+    app.stop();
+  });
+
+  test('gives every completion checkbox a task-specific action label', async () => {
+    const { app, dom } = await setup();
+    const { document } = dom.window;
+    const openTask = document.querySelector('[data-complete-task="task-1"]');
+    const completedTask = document.querySelector('[data-complete-task="task-2"]');
+
+    expect(openTask.getAttribute('aria-label')).toContain('<img src=x onerror=alert(1)> Keyboard map');
+    expect(openTask.getAttribute('aria-label')).toContain('Отметить');
+    expect(openTask.getAttribute('aria-label')).toContain('выполненной');
+    expect(completedTask.getAttribute('aria-label')).toContain('Responsive images');
+    expect(completedTask.getAttribute('aria-label')).toContain('Вернуть');
+    expect(completedTask.getAttribute('aria-label')).toContain('в работу');
+
+    document.querySelector('[data-open-task="task-1"]').click();
+    expect(document.querySelector('#drawer-completed').getAttribute('aria-label')).toContain('Keyboard map');
+    expect(document.querySelector('#drawer-completed').getAttribute('aria-label')).toContain('Отметить');
     app.stop();
   });
 
@@ -448,6 +531,62 @@ describe('audit tracker DOM client', () => {
     await errorApp.start();
     expect(errorDom.window.document.querySelector('#app-status').textContent).toContain('Network unavailable');
     errorApp.stop();
+  });
+
+  test('shows a dedicated initialization error and permanently disables mutations', async () => {
+    const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+    const dom = new JSDOM(html, { url: 'https://example.test/' });
+    const interval = vi.fn();
+    const app = appModule.createAuditApp({
+      document: dom.window.document,
+      window: dom.window,
+      api: undefined,
+      initializationError: {
+        kind: 'invalid-link',
+        message: 'В ссылке нет корректного токена доски.',
+      },
+      reportMarkdown,
+      setIntervalFn: interval,
+      clearIntervalFn: vi.fn(),
+    });
+    await app.start();
+    const { document } = dom.window;
+
+    expect(document.querySelector('#initialization-error').hidden).toBe(false);
+    expect(document.querySelector('#initialization-error').dataset.state).toBe('invalid-link');
+    expect(document.querySelector('#initialization-error').textContent).toContain('В ссылке нет корректного токена');
+    expect(document.querySelector('#open-new-task').disabled).toBe(true);
+    expect(document.querySelector('#board-comment').disabled).toBe(true);
+    expect(document.querySelector('#board-comment-form button[type="submit"]').disabled).toBe(true);
+    expect(document.querySelector('#drawer-completed').disabled).toBe(true);
+    expect(interval).not.toHaveBeenCalled();
+
+    document.querySelector('#board-comment').value = 'Must not send';
+    document.querySelector('#board-comment-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    document.querySelector('#drawer-completed').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await settle();
+    expect(document.querySelector('#display-name-dialog').hasAttribute('open')).toBe(false);
+    expect(document.querySelector('#app-status').textContent).toContain('В ссылке нет корректного токена');
+    app.stop();
+  });
+
+  test('classifies missing token and invalid public configuration before creating an API', async () => {
+    const loadConfig = vi.fn();
+    const missingToken = await appModule.initializeBoardApi({ hash: '', loadConfig });
+    expect(missingToken).toEqual({
+      api: null,
+      error: { kind: 'invalid-link', message: 'В ссылке нет корректного токена доски.' },
+    });
+    expect(loadConfig).not.toHaveBeenCalled();
+
+    const invalidConfig = await appModule.initializeBoardApi({
+      hash: '#board=abcdefghijklmnopqrstuvwxyz1234567890ABCDEFG',
+      loadConfig: async () => ({ SUPABASE_URL: '', SUPABASE_ANON_KEY: '' }),
+    });
+    expect(invalidConfig).toEqual({
+      api: null,
+      error: { kind: 'configuration-error', message: 'Добавьте публичные настройки Supabase в src/config.js.' },
+    });
   });
 
   test('does not rebind local event listeners when the client restarts', async () => {

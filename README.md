@@ -67,4 +67,22 @@ npm run build
 3. Убедитесь, что основная ветка называется `main`, затем отправьте в неё изменения либо вручную запустите workflow **Deploy GitHub Pages**. Если используется другая ветка, измените `on.push.branches` в [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 4. После первого успешного деплоя скопируйте точный адрес Pages и используйте его как `AUDIT_TRACKER_SITE_URL` при создании доски.
 
-Workflow выполняет `npm ci`, тесты и production-сборку, после чего загружает только `dist/` штатными GitHub Pages actions. В артефакт не входят `node_modules`, тесты, `.git`, SQL-файлы Supabase, локальная конфигурация или ключи с расширенными правами.
+Workflow выполняет `npm ci`, тесты и production-сборку, а в отдельной временной локальной базе Supabase — все 55 pgTAP-проверок. Деплой начинается только после обоих успешных заданий, после чего загружает только `dist/` штатными GitHub Pages actions. В артефакт не входят `node_modules`, тесты, `.git`, SQL-файлы Supabase, локальная конфигурация или ключи с расширенными правами.
+
+## Проверка базы данных
+
+Установите [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) и запустите Docker-совместимый контейнерный рантайм. Из корня проекта выполните:
+
+```sh
+supabase db start
+npm run test:db
+supabase stop --no-backup
+```
+
+`npm run test:db` запускает `supabase test db` и выполняет файл `supabase/tests/database.test.sql` с 55 pgTAP-проверками на свежей локальной базе. Workflow фиксирует CLI версии `2.84.2` через официальный `supabase/setup-cli@v2`.
+
+Для уже подготовленной PostgreSQL-базы остаётся доступен прямой вариант без локального стека Supabase:
+
+```sh
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/database.test.sql
+```

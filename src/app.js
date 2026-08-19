@@ -7,13 +7,25 @@ import {
   parseBoardToken,
   priorityProgress,
 } from './domain.js';
-import { createBoardApi, parseAuditReport } from './client.js';
+import {
+  createBoardApi,
+  createSupabaseRpcClient,
+  parseAuditReport,
+  parseMarkdownBlocks,
+} from './client.js';
 
 const DISPLAY_NAME_KEY = 'audit-tracker-display-name';
 const MUTATION_CONTROL_SELECTOR = [
+  '#open-new-task',
+  '#new-task-form input',
+  '#new-task-form textarea',
+  '#new-task-form select',
   '#new-task-form button[type="submit"]',
+  '#board-comment-form textarea',
   '#board-comment-form button[type="submit"]',
+  '#task-comment-form textarea',
   '#task-comment-form button[type="submit"]',
+  '#drawer-completed',
   '[data-complete-task]',
 ].join(', ');
 
@@ -47,6 +59,82 @@ function appendEmpty(document, container, text) {
   container.replaceChildren(element(document, 'p', 'empty-state', text));
 }
 
+function appendInlineContent(document, container, tokens) {
+  for (const token of tokens) {
+    if (token.type === 'text') {
+      container.append(document.createTextNode(token.value));
+    } else if (token.type === 'code') {
+      container.append(element(document, 'code', null, token.value));
+    } else if (token.type === 'strong') {
+      container.append(element(document, 'strong', null, token.value));
+    } else if (token.type === 'link') {
+      const link = element(document, 'a', null, token.value);
+      link.href = token.href;
+      if (/^https?:/i.test(token.href)) link.rel = 'noreferrer';
+      container.append(link);
+    }
+  }
+}
+
+function appendMarkdownBlocks(document, container, blocks) {
+  for (const block of blocks) {
+    if (block.type === 'thematic-break') {
+      container.append(document.createElement('hr'));
+    } else if (block.type === 'heading') {
+      const heading = document.createElement(`h${block.level}`);
+      appendInlineContent(document, heading, block.content);
+      container.append(heading);
+    } else if (block.type === 'paragraph') {
+      const paragraph = document.createElement('p');
+      appendInlineContent(document, paragraph, block.content);
+      container.append(paragraph);
+    } else if (block.type === 'ordered-list' || block.type === 'unordered-list') {
+      const list = document.createElement(block.type === 'ordered-list' ? 'ol' : 'ul');
+      if (block.start && block.start !== 1) list.start = block.start;
+      for (const content of block.items) {
+        const item = document.createElement('li');
+        appendInlineContent(document, item, content);
+        list.append(item);
+      }
+      container.append(list);
+    } else if (block.type === 'blockquote') {
+      const quote = document.createElement('blockquote');
+      appendMarkdownBlocks(document, quote, block.children);
+      container.append(quote);
+    } else if (block.type === 'table') {
+      const scroll = element(document, 'div', 'report-table-scroll');
+      const table = document.createElement('table');
+      const head = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      for (const content of block.header) {
+        const cell = document.createElement('th');
+        cell.scope = 'col';
+        appendInlineContent(document, cell, content);
+        headRow.append(cell);
+      }
+      head.append(headRow);
+      const body = document.createElement('tbody');
+      for (const row of block.rows) {
+        const tableRow = document.createElement('tr');
+        for (const content of row) {
+          const cell = document.createElement('td');
+          appendInlineContent(document, cell, content);
+          tableRow.append(cell);
+        }
+        body.append(tableRow);
+      }
+      table.append(head, body);
+      scroll.append(table);
+      container.append(scroll);
+    }
+  }
+}
+
+function renderMarkdown(document, container, markdown) {
+  container.replaceChildren();
+  appendMarkdownBlocks(document, container, parseMarkdownBlocks(markdown));
+}
+
 /**
  * Builds the browser client around an injected RPC adapter.
  * The injection keeps DOM behavior testable without making network requests.
@@ -55,12 +143,16 @@ export function createAuditApp({
   document,
   window,
   api,
+  initializationError = null,
   reportMarkdown = '',
   setIntervalFn = window.setInterval.bind(window),
   clearIntervalFn = window.clearInterval.bind(window),
 }) {
   const nodes = {
     status: document.querySelector('#app-status'),
+    initializationError: document.querySelector('#initialization-error'),
+    initializationErrorTitle: document.querySelector('#initialization-error-title'),
+    initializationErrorMessage: document.querySelector('#initialization-error-message'),
     taskList: document.querySelector('#task-list'),
     search: document.querySelector('#task-search'),
     priorityFilter: document.querySelector('#priority-filter'),
@@ -106,6 +198,7 @@ export function createAuditApp({
   let eventsBound = false;
   let refreshPromise = null;
   let mutationPending = false;
+  const mutationsAvailable = Boolean(api) && !initializationError;
   const dialogStack = [];
 
   function openManagedDialog(dialog, initialFocus) {
@@ -134,11 +227,17 @@ export function createAuditApp({
   function setMutationPending(pending) {
     mutationPending = pending;
     for (const control of document.querySelectorAll(MUTATION_CONTROL_SELECTOR)) {
-      control.disabled = pending;
+      control.disabled = pending || !mutationsAvailable;
     }
     for (const form of [nodes.newTaskForm, nodes.boardCommentForm, nodes.taskCommentForm]) {
       form.setAttribute('aria-busy', String(pending));
     }
+  }
+
+  function completionActionLabel(task) {
+    return task.completed
+      ? `Вернуть задачу «${task.title}» в работу`
+      : `Отметить задачу «${task.title}» выполненной`;
   }
 
   function renderProgress() {
@@ -199,7 +298,8 @@ export function createAuditApp({
     nodes.drawerTitle.textContent = task.title;
     nodes.drawerDescription.textContent = task.description || 'Описание не добавлено.';
     nodes.drawerCompleted.checked = task.completed;
-    nodes.drawerCompleted.disabled = mutationPending;
+    nodes.drawerCompleted.disabled = mutationPending || !mutationsAvailable;
+    nodes.drawerCompleted.setAttribute('aria-label', completionActionLabel(task));
     nodes.drawerCompleted.dataset.completeTask = task.id;
     nodes.taskEvents.replaceChildren();
     if (!task.events.length) {
@@ -254,7 +354,8 @@ export function createAuditApp({
       const checkbox = element(document, 'input');
       checkbox.type = 'checkbox';
       checkbox.checked = task.completed;
-      checkbox.disabled = mutationPending;
+      checkbox.disabled = mutationPending || !mutationsAvailable;
+      checkbox.setAttribute('aria-label', completionActionLabel(task));
       checkbox.dataset.completeTask = task.id;
       const completionText = element(document, 'span', null, 'Готово');
       completion.append(checkbox, completionText);
@@ -279,7 +380,7 @@ export function createAuditApp({
     const navigation = document.querySelector('#report-navigation');
     const disclosures = document.querySelector('#report-disclosures');
     title.textContent = report.title || 'Технический аудит';
-    introduction.textContent = report.introduction;
+    renderMarkdown(document, introduction, report.introduction);
     navigation.replaceChildren();
     disclosures.replaceChildren();
     const navList = element(document, 'ol');
@@ -300,8 +401,10 @@ export function createAuditApp({
 
       const details = element(document, 'details', 'report-section');
       details.id = section.id;
-      const summary = element(document, 'summary', null, section.title);
-      const body = element(document, 'pre', 'report-body', section.body);
+      const summary = document.createElement('summary');
+      summary.append(element(document, 'h2', null, section.title));
+      const body = element(document, 'div', 'report-body');
+      renderMarkdown(document, body, section.body);
       details.append(summary, body);
       disclosures.append(details);
     }
@@ -309,6 +412,7 @@ export function createAuditApp({
   }
 
   async function refresh({ silent = false } = {}) {
+    if (!api || typeof api.snapshot !== 'function') return false;
     if (refreshPromise) return refreshPromise;
     refreshPromise = (async () => {
       if (!silent) setStatus('Загрузка общей доски…', 'loading');
@@ -350,7 +454,7 @@ export function createAuditApp({
   }
 
   async function performMutation(action) {
-    if (mutationPending) return false;
+    if (!mutationsAvailable || mutationPending || typeof action !== 'function') return false;
     const author = await requireDisplayName();
     if (!author) {
       renderBoard();
@@ -552,8 +656,22 @@ export function createAuditApp({
       renderReport();
       renderBoard();
       bindEvents();
-      window.addEventListener('focus', handleFocus);
       document.addEventListener('keydown', handleDocumentKeydown);
+      if (initializationError) {
+        nodes.initializationError.hidden = false;
+        nodes.initializationError.dataset.state = initializationError.kind;
+        nodes.initializationErrorTitle.textContent = initializationError.kind === 'invalid-link'
+          ? 'Ссылка на доску недействительна'
+          : 'Доска не настроена';
+        nodes.initializationErrorMessage.textContent = initializationError.message;
+        setStatus(initializationError.message, initializationError.kind);
+        setMutationPending(false);
+        nodes.taskList.setAttribute('aria-busy', 'false');
+        appendEmpty(document, nodes.taskList, 'Совместная доска недоступна. Полный отчёт можно читать во вкладке «Отчёт».');
+        return;
+      }
+      nodes.initializationError.hidden = true;
+      window.addEventListener('focus', handleFocus);
       await refresh();
       intervalId = setIntervalFn(() => refresh({ silent: true }), 20_000);
     },
@@ -569,28 +687,45 @@ export function createAuditApp({
   };
 }
 
+export async function initializeBoardApi({
+  hash,
+  loadConfig = () => import('./config.js'),
+  fetchFn = globalThis.fetch,
+}) {
+  const token = parseBoardToken(hash);
+  if (!token) {
+    return {
+      api: null,
+      error: { kind: 'invalid-link', message: 'В ссылке нет корректного токена доски.' },
+    };
+  }
+
+  let config;
+  try {
+    config = await loadConfig();
+    if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY || config.SUPABASE_URL.includes('YOUR_PROJECT')) {
+      throw new Error('invalid public configuration');
+    }
+    const rpcClient = createSupabaseRpcClient({
+      url: config.SUPABASE_URL,
+      anonKey: config.SUPABASE_ANON_KEY,
+      fetchFn,
+    });
+    return { api: createBoardApi(rpcClient, token), error: null };
+  } catch {
+    return {
+      api: null,
+      error: { kind: 'configuration-error', message: 'Добавьте публичные настройки Supabase в src/config.js.' },
+    };
+  }
+}
+
 async function bootstrap() {
   const reportPromise = fetch(new URL('../audit-report.md', import.meta.url)).then((response) => {
     if (!response.ok) throw new Error('Не удалось загрузить файл отчёта.');
     return response.text();
   });
-  let api;
-  try {
-    const token = parseBoardToken(window.location.hash);
-    if (!token) throw new Error('В ссылке нет корректного токена доски.');
-    const [{ createClient }, config] = await Promise.all([
-      import('@supabase/supabase-js'),
-      import('./config.js').catch(() => {
-        throw new Error('Добавьте публичные настройки Supabase в src/config.js.');
-      }),
-    ]);
-    if (!config.SUPABASE_URL || !config.SUPABASE_ANON_KEY || config.SUPABASE_URL.includes('YOUR_PROJECT')) {
-      throw new Error('Добавьте публичные настройки Supabase в src/config.js.');
-    }
-    api = createBoardApi(createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY), token);
-  } catch (error) {
-    api = { snapshot: async () => { throw error; } };
-  }
+  const initialization = await initializeBoardApi({ hash: window.location.hash });
 
   let reportMarkdown = '';
   try {
@@ -598,7 +733,13 @@ async function bootstrap() {
   } catch (error) {
     reportMarkdown = `# Технический аудит\n\n${error.message}`;
   }
-  await createAuditApp({ document, window, api, reportMarkdown }).start();
+  await createAuditApp({
+    document,
+    window,
+    api: initialization.api,
+    initializationError: initialization.error,
+    reportMarkdown,
+  }).start();
 }
 
 if (typeof document !== 'undefined' && document.querySelector('#task-list')) {

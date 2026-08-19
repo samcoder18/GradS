@@ -6,11 +6,9 @@
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:db": "supabase test db",
     "build": "node scripts/build.mjs",
     "preview": "vite --host 127.0.0.1"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "2.56.1"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.2.4",

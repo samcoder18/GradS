@@ -76,7 +76,6 @@ create table public.board_comments (
   constraint board_comments_body_length check (char_length(btrim(body)) between 1 and 4000)
 );
 
-create index tasks_board_order_idx on public.tasks(board_id, position);
 create index task_events_board_task_created_idx on public.task_events(board_id, task_id, created_at, id);
 create index task_comments_board_task_created_idx on public.task_comments(board_id, task_id, created_at, id);
 create index board_comments_board_created_idx on public.board_comments(board_id, created_at, id);

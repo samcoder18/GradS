@@ -69,3 +69,67 @@ describe('createBoardApi', () => {
     await expect(api.snapshot()).rejects.toBe(error);
   });
 });
+
+describe('createSupabaseRpcClient', () => {
+  test('posts RPC requests directly to Supabase with the public key headers', async () => {
+    const calls = [];
+    const fetchFn = async (...args) => {
+      calls.push(args);
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { board: { id: 'board-1' }, tasks: [], comments: [] };
+        },
+      };
+    };
+    const rpcClient = client.createSupabaseRpcClient({
+      url: 'https://audit-project.supabase.co/',
+      anonKey: 'public-anon-key',
+      fetchFn,
+    });
+
+    const result = await rpcClient.rpc('board_snapshot', { token: 'opaque-token' });
+
+    expect(result).toEqual({
+      data: { board: { id: 'board-1' }, tasks: [], comments: [] },
+      error: null,
+    });
+    expect(calls).toEqual([[
+      'https://audit-project.supabase.co/rest/v1/rpc/board_snapshot',
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: 'Bearer public-anon-key',
+          'Content-Type': 'application/json',
+          apikey: 'public-anon-key',
+        },
+        body: '{"token":"opaque-token"}',
+      },
+    ]]);
+  });
+
+  test('turns a Supabase HTTP error into the error contract consumed by createBoardApi', async () => {
+    const rpcClient = client.createSupabaseRpcClient({
+      url: 'https://audit-project.supabase.co',
+      anonKey: 'public-anon-key',
+      fetchFn: async () => ({
+        ok: false,
+        status: 400,
+        async json() {
+          return { code: '22023', message: 'invalid board token', details: 'Capability mismatch', hint: null };
+        },
+      }),
+    });
+    const api = client.createBoardApi(rpcClient, 'opaque-token');
+
+    await expect(api.snapshot()).rejects.toMatchObject({
+      name: 'SupabaseRpcError',
+      message: 'invalid board token',
+      status: 400,
+      code: '22023',
+      details: 'Capability mismatch',
+    });
+  });
+});

@@ -4,6 +4,7 @@
   --muted: #6c665c;
   --paper: #f4f1ea;
   --surface: #fffdf8;
+  --surface-muted: #f4efe6;
   --line: #d8d1c5;
   --accent: #b42333;
   --accent-dark: #861927;
@@ -204,6 +205,23 @@ h3 {
 
 .hero-row {
   align-items: end;
+}
+
+.initialization-error {
+  margin-top: 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  padding: 1rem 1.2rem;
+}
+
+.initialization-error h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.1rem;
+}
+
+.initialization-error p {
+  margin: 0;
 }
 
 .button,
@@ -679,9 +697,14 @@ dialog::backdrop {
 
 .report-section summary {
   padding: 1rem 1.2rem;
+  cursor: pointer;
+}
+
+.report-section summary h2 {
+  display: inline;
+  margin: 0;
   font-size: 1.05rem;
   font-weight: 780;
-  cursor: pointer;
 }
 
 .report-section[open] summary {
@@ -691,9 +714,61 @@ dialog::backdrop {
 .report-body {
   margin: 0;
   padding: 1.2rem;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: 0.92rem/1.65 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.report-body > :first-child,
+.report-introduction > :first-child {
+  margin-top: 0;
+}
+
+.report-body > :last-child,
+.report-introduction > :last-child {
+  margin-bottom: 0;
+}
+
+.report-body h3,
+.report-body h4 {
+  margin: 1.5rem 0 0.55rem;
+}
+
+.report-body blockquote {
+  margin: 1rem 0;
+  border-left: 0.25rem solid var(--accent);
+  padding-left: 1rem;
+  color: var(--muted);
+}
+
+.report-body code,
+.report-introduction code {
+  border-radius: 0.3rem;
+  background: var(--surface-muted);
+  padding: 0.08rem 0.3rem;
+  font-size: 0.9em;
+}
+
+.report-table-scroll {
+  max-width: 100%;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
+.report-body table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.report-body th,
+.report-body td {
+  border: 1px solid var(--line);
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.report-body th {
+  background: var(--surface-muted);
 }
 
 @media (max-width: 960px) {

@@ -22,6 +22,9 @@ function buildEnvironment(outputDirectory, extra = {}) {
 describe('deployment build', () => {
   test('GitHub Pages workflow tests and uploads the generated runtime artifact', async () => {
     const workflow = await readFile(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
+    const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+    const supabaseConfig = await readFile(new URL('../supabase/config.toml', import.meta.url), 'utf8');
+    const databaseTest = await readFile(new URL('../supabase/tests/database.test.sql', import.meta.url), 'utf8');
 
     expect(workflow).toMatch(/permissions:\s*[\s\S]*pages:\s*write[\s\S]*id-token:\s*write/);
     expect(workflow).toMatch(/concurrency:\s*[\s\S]*group:\s*github-pages/);
@@ -34,6 +37,15 @@ describe('deployment build', () => {
     expect(workflow).toMatch(/npm test/);
     expect(workflow).toMatch(/npm run build/);
     expect(workflow).toMatch(/uses:\s*actions\/upload-pages-artifact@v\d+[\s\S]*?with:\s*\n\s*path:\s*dist\s*$/m);
+    expect(workflow).toMatch(/database-tests:[\s\S]*uses:\s*supabase\/setup-cli@v2/);
+    expect(workflow).toMatch(/database-tests:[\s\S]*version:\s*2\.84\.2/);
+    expect(workflow).toMatch(/database-tests:[\s\S]*supabase db start[\s\S]*npm run test:db/);
+    expect(workflow).toMatch(/deploy:[\s\S]*needs:\s*\[build, database-tests\]/);
+    expect(packageJson.scripts['test:db']).toBe('supabase test db');
+    expect(supabaseConfig).toMatch(/project_id\s*=\s*"audit-tracker"/);
+    expect(supabaseConfig).toMatch(/major_version\s*=\s*17/);
+    expect(databaseTest).toContain('select plan(55);');
+    expect(databaseTest).toContain('select * from finish();');
   });
 
   test('emits only runtime assets and a public generated configuration', async () => {
@@ -48,12 +60,18 @@ describe('deployment build', () => {
       const rootFiles = await readdir(outputDirectory);
       const sourceFiles = await readdir(join(outputDirectory, 'src'));
       const config = await readFile(join(outputDirectory, 'src/config.js'), 'utf8');
+      const html = await readFile(join(outputDirectory, 'index.html'), 'utf8');
+      const client = await readFile(join(outputDirectory, 'src/client.js'), 'utf8');
 
       expect(rootFiles.sort()).toEqual(['audit-report.md', 'index.html', 'src', 'styles.css']);
       expect(sourceFiles.sort()).toEqual(['app.js', 'client.js', 'config.js', 'domain.js']);
       expect(config).toContain('SUPABASE_URL = "https://audit-project.supabase.co"');
       expect(config).toContain('SUPABASE_ANON_KEY = "public-anon-key"');
       expect(config).not.toMatch(/service[_-]?role|SUPABASE_DB_URL/i);
+      expect(html).not.toMatch(/<script[^>]+type=["']importmap["'][^>]*>/i);
+      expect(html).not.toMatch(/<script[^>]+src=["']https?:\/\//i);
+      expect(html).not.toContain('esm.sh');
+      expect(client).not.toMatch(/from\s+['"]@supabase\/supabase-js|https?:\/\//);
     } finally {
       await rm(outputDirectory, { recursive: true, force: true });
     }
