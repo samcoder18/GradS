@@ -49,6 +49,8 @@ begin
   from public.tasks
   where tasks.board_id = seeded_board_id;
 
+  perform private.seed_roadmap_tasks(seeded_board_id);
+
   return seeded_board_id;
 end;
 $$;
