@@ -2,6 +2,7 @@ node_modules/
 coverage/
 dist/
 .superpowers/
+.worktrees/
 config.js
 src/config.js
 .env
