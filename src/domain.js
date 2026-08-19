@@ -81,7 +81,7 @@ export function normalizeComment(input) {
 }
 
 const PRIORITIES = new Set(['P0', 'P1', 'P2', 'P3']);
-const BOARD_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
+const BOARD_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 /**
  * Converts the new-task form values to the board's small public contract.

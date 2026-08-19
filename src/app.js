@@ -10,6 +10,12 @@ import {
 import { createBoardApi, parseAuditReport } from './client.js';
 
 const DISPLAY_NAME_KEY = 'audit-tracker-display-name';
+const MUTATION_CONTROL_SELECTOR = [
+  '#new-task-form button[type="submit"]',
+  '#board-comment-form button[type="submit"]',
+  '#task-comment-form button[type="submit"]',
+  '[data-complete-task]',
+].join(', ');
 
 function element(document, tag, className, text) {
   const node = document.createElement(tag);
@@ -97,11 +103,42 @@ export function createAuditApp({
   let nameRequest = null;
   let intervalId = null;
   let started = false;
+  let eventsBound = false;
   let refreshPromise = null;
+  let mutationPending = false;
+  const dialogStack = [];
+
+  function openManagedDialog(dialog, initialFocus) {
+    if (dialog.hasAttribute('open')) return;
+    dialogStack.push({ dialog, returnFocus: document.activeElement });
+    openDialog(dialog);
+    if (initialFocus) {
+      window.setTimeout(() => {
+        if (dialog.hasAttribute('open')) initialFocus.focus();
+      }, 0);
+    }
+  }
+
+  function closeManagedDialog(dialog) {
+    const index = dialogStack.findLastIndex((entry) => entry.dialog === dialog);
+    const [entry] = index === -1 ? [] : dialogStack.splice(index, 1);
+    closeDialog(dialog);
+    if (entry?.returnFocus?.isConnected) entry.returnFocus.focus();
+  }
 
   function setStatus(message, kind = 'ready') {
     nodes.status.textContent = message;
     nodes.status.dataset.state = kind;
+  }
+
+  function setMutationPending(pending) {
+    mutationPending = pending;
+    for (const control of document.querySelectorAll(MUTATION_CONTROL_SELECTOR)) {
+      control.disabled = pending;
+    }
+    for (const form of [nodes.newTaskForm, nodes.boardCommentForm, nodes.taskCommentForm]) {
+      form.setAttribute('aria-busy', String(pending));
+    }
   }
 
   function renderProgress() {
@@ -153,7 +190,7 @@ export function createAuditApp({
   function renderDrawer() {
     const task = taskById(selectedTaskId);
     if (!task) {
-      if (nodes.drawer.hasAttribute('open')) closeDialog(nodes.drawer);
+      if (nodes.drawer.hasAttribute('open')) closeManagedDialog(nodes.drawer);
       selectedTaskId = null;
       return;
     }
@@ -162,6 +199,7 @@ export function createAuditApp({
     nodes.drawerTitle.textContent = task.title;
     nodes.drawerDescription.textContent = task.description || 'Описание не добавлено.';
     nodes.drawerCompleted.checked = task.completed;
+    nodes.drawerCompleted.disabled = mutationPending;
     nodes.drawerCompleted.dataset.completeTask = task.id;
     nodes.taskEvents.replaceChildren();
     if (!task.events.length) {
@@ -216,6 +254,7 @@ export function createAuditApp({
       const checkbox = element(document, 'input');
       checkbox.type = 'checkbox';
       checkbox.checked = task.completed;
+      checkbox.disabled = mutationPending;
       checkbox.dataset.completeTask = task.id;
       const completionText = element(document, 'span', null, 'Готово');
       completion.append(checkbox, completionText);
@@ -282,9 +321,11 @@ export function createAuditApp({
           comments: Array.isArray(snapshot?.comments) ? snapshot.comments : [],
         };
         renderBoard();
-        setStatus(`Доска обновлена · ${new Intl.DateTimeFormat('ru-RU', { timeStyle: 'short' }).format(new Date())}`);
+        if (!silent) {
+          setStatus(`Доска обновлена · ${new Intl.DateTimeFormat('ru-RU', { timeStyle: 'short' }).format(new Date())}`);
+        }
       } catch (error) {
-        setStatus(`Не удалось обновить доску: ${error?.message || 'неизвестная ошибка'}`, 'error');
+        if (!silent) setStatus(`Не удалось обновить доску: ${error?.message || 'неизвестная ошибка'}`, 'error');
         if (!board.tasks.length) appendEmpty(document, nodes.taskList, 'Доска сейчас недоступна. Попробуйте обновить страницу.');
       } finally {
         nodes.taskList.setAttribute('aria-busy', 'false');
@@ -304,26 +345,32 @@ export function createAuditApp({
     nameRequest = { promise, resolve: resolveRequest };
     nodes.nameError.textContent = '';
     nodes.nameInput.value = '';
-    openDialog(nodes.nameDialog);
-    window.setTimeout(() => nodes.nameInput.focus(), 0);
+    openManagedDialog(nodes.nameDialog, nodes.nameInput);
     return promise;
   }
 
   async function performMutation(action) {
+    if (mutationPending) return false;
     const author = await requireDisplayName();
     if (!author) {
       renderBoard();
       return false;
     }
+    if (mutationPending) return false;
+    setMutationPending(true);
     setStatus('Сохраняем изменение…', 'loading');
     try {
       await action(author);
-      await refresh();
+      if (refreshPromise) await refreshPromise;
+      await refresh({ silent: true });
+      setStatus('Изменение сохранено.');
       return true;
     } catch (error) {
       setStatus(`Не удалось сохранить: ${error?.message || 'неизвестная ошибка'}`, 'error');
       renderBoard();
       return false;
+    } finally {
+      setMutationPending(false);
     }
   }
 
@@ -336,7 +383,7 @@ export function createAuditApp({
   function showTask(id) {
     selectedTaskId = id;
     renderDrawer();
-    openDialog(nodes.drawer);
+    openManagedDialog(nodes.drawer, document.querySelector('[data-close-drawer]'));
   }
 
   function switchTab(tab) {
@@ -349,13 +396,27 @@ export function createAuditApp({
   }
 
   function cancelNameRequest() {
-    closeDialog(nodes.nameDialog);
+    closeManagedDialog(nodes.nameDialog);
     const request = nameRequest;
     nameRequest = null;
     request?.resolve(null);
   }
 
   function bindEvents() {
+    if (eventsBound) return;
+    eventsBound = true;
+    document.querySelector('.skip-link').addEventListener('click', (event) => {
+      event.preventDefault();
+      const main = document.querySelector('#main-content');
+      main.focus({ preventScroll: true });
+      main.scrollIntoView?.({ block: 'start' });
+    });
+    document.querySelector('.brand').addEventListener('click', (event) => {
+      event.preventDefault();
+      switchTab(document.querySelector('#tracker-tab'));
+      document.querySelector('#main-content').scrollIntoView?.({ block: 'start' });
+    });
+
     for (const tab of document.querySelectorAll('[role="tab"]')) {
       tab.addEventListener('click', () => switchTab(tab));
       tab.addEventListener('keydown', (event) => {
@@ -386,14 +447,13 @@ export function createAuditApp({
       if (event.target.matches('[data-complete-task]')) void handleCompletion(event.target);
     });
     nodes.drawerCompleted.addEventListener('change', () => void handleCompletion(nodes.drawerCompleted));
-    document.querySelector('[data-close-drawer]').addEventListener('click', () => closeDialog(nodes.drawer));
+    document.querySelector('[data-close-drawer]').addEventListener('click', () => closeManagedDialog(nodes.drawer));
     document.querySelector('#open-new-task').addEventListener('click', () => {
       nodes.newTaskNameError.textContent = '';
-      openDialog(nodes.newTaskDialog);
-      window.setTimeout(() => nodes.newTaskName.focus(), 0);
+      openManagedDialog(nodes.newTaskDialog, nodes.newTaskName);
     });
     for (const close of document.querySelectorAll('[data-close-dialog]')) {
-      close.addEventListener('click', () => closeDialog(close.closest('dialog')));
+      close.addEventListener('click', () => closeManagedDialog(close.closest('dialog')));
     }
 
     nodes.nameForm.addEventListener('submit', (event) => {
@@ -405,7 +465,7 @@ export function createAuditApp({
         return;
       }
       window.localStorage.setItem(DISPLAY_NAME_KEY, result.value);
-      closeDialog(nodes.nameDialog);
+      closeManagedDialog(nodes.nameDialog);
       const request = nameRequest;
       nameRequest = null;
       request?.resolve(result.value);
@@ -434,7 +494,7 @@ export function createAuditApp({
       if (saved) {
         nodes.newTaskForm.reset();
         nodes.newTaskPriority.value = 'P1';
-        closeDialog(nodes.newTaskDialog);
+        closeManagedDialog(nodes.newTaskDialog);
       }
     });
 
@@ -462,7 +522,6 @@ export function createAuditApp({
     document.querySelector('#collapse-report').addEventListener('click', () => {
       for (const details of document.querySelectorAll('#report-disclosures details')) details.open = false;
     });
-    window.addEventListener('focus', handleFocus);
   }
 
   function handleFocus() {
@@ -471,12 +530,11 @@ export function createAuditApp({
 
   function handleDocumentKeydown(event) {
     if (event.key !== 'Escape') return;
-    const dialogs = [...document.querySelectorAll('dialog[open]')];
-    const dialog = dialogs.at(-1);
-    if (!dialog) return;
+    const entry = dialogStack.findLast(({ dialog }) => dialog.hasAttribute('open'));
+    if (!entry) return;
     event.preventDefault();
-    if (dialog === nodes.nameDialog) cancelNameRequest();
-    else closeDialog(dialog);
+    if (entry.dialog === nodes.nameDialog) cancelNameRequest();
+    else closeManagedDialog(entry.dialog);
   }
 
   return {
@@ -486,6 +544,7 @@ export function createAuditApp({
       renderReport();
       renderBoard();
       bindEvents();
+      window.addEventListener('focus', handleFocus);
       document.addEventListener('keydown', handleDocumentKeydown);
       await refresh();
       intervalId = setIntervalFn(() => refresh({ silent: true }), 20_000);

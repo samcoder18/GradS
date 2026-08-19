@@ -46,12 +46,12 @@ function snapshot() {
   };
 }
 
-async function setup({ storedName = 'Ada', snapshotValue = snapshot() } = {}) {
+async function setup({ storedName = 'Ada', snapshotValue = snapshot(), apiOverride } = {}) {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
   const dom = new JSDOM(html, { url: 'https://example.test/#board=abcdefghijklmnopqrstuvwxyz123456' });
   if (storedName) dom.window.localStorage.setItem('audit-tracker-display-name', storedName);
   const calls = [];
-  const api = {
+  const api = apiOverride ?? {
     snapshot: vi.fn(async () => structuredClone(snapshotValue)),
     createTask: vi.fn(async (values) => calls.push(['createTask', values])),
     setCompleted: vi.fn(async (values) => calls.push(['setCompleted', values])),
@@ -77,6 +77,16 @@ async function setup({ storedName = 'Ada', snapshotValue = snapshot() } = {}) {
 
 async function settle() {
   await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 describe('audit tracker DOM client', () => {
@@ -105,10 +115,17 @@ describe('audit tracker DOM client', () => {
     app.stop();
   });
 
-  test('keeps the capability token in the URL when navigating report sections', async () => {
+  test('keeps the capability token for skip, brand, and report navigation', async () => {
     const { app, dom } = await setup();
     const { document } = dom.window;
     const originalHash = dom.window.location.hash;
+
+    const skipEvent = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
+    document.querySelector('.skip-link').dispatchEvent(skipEvent);
+    await settle();
+    expect(skipEvent.defaultPrevented).toBe(true);
+    expect(dom.window.location.hash).toBe(originalHash);
+    expect(document.activeElement).toBe(document.querySelector('#main-content'));
 
     document.querySelector('#report-tab').click();
     document.querySelector('#report-navigation a').click();
@@ -116,6 +133,13 @@ describe('audit tracker DOM client', () => {
 
     expect(dom.window.location.hash).toBe(originalHash);
     expect(document.querySelector('#report-disclosures details').open).toBe(true);
+
+    const brandEvent = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
+    document.querySelector('.brand').dispatchEvent(brandEvent);
+    await settle();
+    expect(brandEvent.defaultPrevented).toBe(true);
+    expect(dom.window.location.hash).toBe(originalHash);
+    expect(document.querySelector('#tracker-tab').getAttribute('aria-selected')).toBe('true');
     app.stop();
   });
 
@@ -178,12 +202,41 @@ describe('audit tracker DOM client', () => {
   test('closes fallback dialogs with Escape when native showModal is unavailable', async () => {
     const { app, dom } = await setup();
     const { document } = dom.window;
-    document.querySelector('#open-new-task').click();
+    const opener = document.querySelector('#open-new-task');
+    opener.focus();
+    opener.click();
+    await settle();
     expect(document.querySelector('#new-task-dialog').hasAttribute('open')).toBe(true);
+    expect(document.activeElement).toBe(document.querySelector('#new-task-name'));
 
     document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
     expect(document.querySelector('#new-task-dialog').hasAttribute('open')).toBe(false);
+    expect(document.activeElement).toBe(opener);
+    app.stop();
+  });
+
+  test('Escape cancels the topmost name gate and restores focus to the open drawer', async () => {
+    const { app, calls, dom } = await setup({ storedName: '' });
+    const { document } = dom.window;
+    document.querySelector('[data-open-task="task-1"]').click();
+    const drawerCheckbox = document.querySelector('#drawer-completed');
+    drawerCheckbox.focus();
+    drawerCheckbox.checked = true;
+    drawerCheckbox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await settle();
+
+    expect(document.querySelector('#task-drawer').hasAttribute('open')).toBe(true);
+    expect(document.querySelector('#display-name-dialog').hasAttribute('open')).toBe(true);
+    expect(document.activeElement).toBe(document.querySelector('#display-name'));
+
+    document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await settle();
+
+    expect(document.querySelector('#display-name-dialog').hasAttribute('open')).toBe(false);
+    expect(document.querySelector('#task-drawer').hasAttribute('open')).toBe(true);
+    expect(document.activeElement).toBe(drawerCheckbox);
+    expect(calls).toHaveLength(0);
     app.stop();
   });
 
@@ -196,6 +249,61 @@ describe('audit tracker DOM client', () => {
 
     await intervalCallback();
     expect(api.snapshot).toHaveBeenCalledTimes(3);
+    app.stop();
+  });
+
+  test('keeps background refreshes and typing filters out of live announcements', async () => {
+    const { app, dom, intervalCallback } = await setup();
+    const { document } = dom.window;
+    const status = document.querySelector('#app-status');
+    status.textContent = 'Stable announcement';
+
+    expect(document.querySelector('#task-list').hasAttribute('aria-live')).toBe(false);
+    dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await settle();
+    expect(status.textContent).toBe('Stable announcement');
+
+    await intervalCallback();
+    expect(status.textContent).toBe('Stable announcement');
+
+    const search = document.querySelector('#task-search');
+    search.value = 'keyboard';
+    search.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    expect(status.textContent).toBe('Stable announcement');
+    app.stop();
+  });
+
+  test('takes a fresh snapshot after a mutation even when an older refresh is in flight', async () => {
+    const staleRefresh = deferred();
+    const fresh = snapshot();
+    fresh.tasks[0].completed = true;
+    const api = {
+      snapshot: vi.fn()
+        .mockResolvedValueOnce(snapshot())
+        .mockImplementationOnce(() => staleRefresh.promise)
+        .mockResolvedValueOnce(fresh),
+      createTask: vi.fn(),
+      setCompleted: vi.fn(async () => ({})),
+      addTaskComment: vi.fn(),
+      addBoardComment: vi.fn(),
+    };
+    const { app, dom } = await setup({ apiOverride: api });
+    const { document } = dom.window;
+
+    dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await Promise.resolve();
+    const checkbox = document.querySelector('[data-complete-task="task-1"]');
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await settle();
+    expect(api.setCompleted).toHaveBeenCalledTimes(1);
+
+    staleRefresh.resolve(snapshot());
+    await settle();
+    await settle();
+
+    expect(api.snapshot).toHaveBeenCalledTimes(3);
+    expect(document.querySelector('[data-complete-task="task-1"]').checked).toBe(true);
     app.stop();
   });
 
@@ -224,6 +332,63 @@ describe('audit tracker DOM client', () => {
     app.stop();
   });
 
+  test('locks mutation controls during a request and prevents duplicate immutable writes', async () => {
+    const pendingComment = deferred();
+    const api = {
+      snapshot: vi.fn(async () => snapshot()),
+      createTask: vi.fn(),
+      setCompleted: vi.fn(),
+      addTaskComment: vi.fn(),
+      addBoardComment: vi.fn(() => pendingComment.promise),
+    };
+    const { app, dom } = await setup({ apiOverride: api });
+    const { document } = dom.window;
+    document.querySelector('#board-comment').value = 'One immutable note';
+    const form = document.querySelector('#board-comment-form');
+
+    form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    const controls = document.querySelectorAll(
+      '#new-task-form button[type="submit"], #board-comment-form button[type="submit"], #task-comment-form button[type="submit"], [data-complete-task]',
+    );
+    expect([...controls].every((control) => control.disabled)).toBe(true);
+
+    form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    expect(api.addBoardComment).toHaveBeenCalledTimes(1);
+
+    pendingComment.resolve({});
+    await settle();
+    await settle();
+    expect([...document.querySelectorAll('#new-task-form button[type="submit"], #board-comment-form button[type="submit"], #task-comment-form button[type="submit"], [data-complete-task]')].every((control) => !control.disabled)).toBe(true);
+    app.stop();
+  });
+
+  test('re-enables mutation controls after a failed write', async () => {
+    const pendingComment = deferred();
+    const api = {
+      snapshot: vi.fn(async () => snapshot()),
+      createTask: vi.fn(),
+      setCompleted: vi.fn(),
+      addTaskComment: vi.fn(),
+      addBoardComment: vi.fn(() => pendingComment.promise),
+    };
+    const { app, dom } = await setup({ apiOverride: api });
+    const { document } = dom.window;
+    document.querySelector('#board-comment').value = 'Will fail once';
+    document.querySelector('#board-comment-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    expect(document.querySelector('#board-comment-form button[type="submit"]').disabled).toBe(true);
+
+    pendingComment.reject(new Error('Write unavailable'));
+    await settle();
+    await settle();
+
+    expect(document.querySelector('#board-comment-form button[type="submit"]').disabled).toBe(false);
+    expect(document.querySelector('#app-status').textContent).toContain('Write unavailable');
+    app.stop();
+  });
+
   test('shows useful empty and loading-error states', async () => {
     const empty = { board: { id: 'board-1' }, tasks: [], comments: [] };
     const { app, dom } = await setup({ snapshotValue: empty });
@@ -243,5 +408,19 @@ describe('audit tracker DOM client', () => {
     await errorApp.start();
     expect(errorDom.window.document.querySelector('#app-status').textContent).toContain('Network unavailable');
     errorApp.stop();
+  });
+
+  test('does not rebind local event listeners when the client restarts', async () => {
+    const { app, dom } = await setup();
+    const { document } = dom.window;
+    app.stop();
+    await app.start();
+    const main = document.querySelector('#main-content');
+    main.focus = vi.fn();
+
+    document.querySelector('.skip-link').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    expect(main.focus).toHaveBeenCalledTimes(1);
+    app.stop();
   });
 });

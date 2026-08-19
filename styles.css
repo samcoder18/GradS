@@ -448,6 +448,15 @@ textarea {
   line-height: 1.3;
 }
 
+.task-title-button,
+.task-description,
+.drawer-description,
+.comment p,
+.event-item span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .task-title-button:hover {
   color: var(--accent);
 }

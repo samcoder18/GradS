@@ -123,6 +123,12 @@ describe('parseBoardToken', () => {
     expect(parseBoardToken('#board=%3Cscript%3E')).toBeNull();
     expect(parseBoardToken('#board=short')).toBeNull();
   });
+
+  test('accepts only the provisioner\'s exact 43-character base64url token length', () => {
+    expect(parseBoardToken(`#board=${'a'.repeat(43)}`)).toBe('a'.repeat(43));
+    expect(parseBoardToken(`#board=${'a'.repeat(42)}`)).toBeNull();
+    expect(parseBoardToken(`#board=${'a'.repeat(44)}`)).toBeNull();
+  });
 });
 
 describe('static app foundation', () => {
