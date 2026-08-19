@@ -1,4 +1,9 @@
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, test, vi } from 'vitest';
 
 import {
@@ -7,6 +12,8 @@ import {
   hashToken,
   provisionBoard,
 } from '../scripts/create-board.mjs';
+
+const execFileAsync = promisify(execFile);
 
 describe('board provisioning', () => {
   test('creates a 256-bit URL-safe opaque token', () => {
@@ -46,5 +53,39 @@ describe('board provisioning', () => {
     expect(result.shareUrl).toBe(`${siteUrl}#board=${result.token}`);
     expect(tokenHash).toBe(createHash('sha256').update(result.token, 'utf8').digest('hex'));
     expect(JSON.stringify(runPsql.mock.calls)).not.toContain(result.token);
+  });
+
+  test('prints only the share URL when psql writes query output', async () => {
+    const fakeBin = await mkdtemp(join(tmpdir(), 'audit-tracker-psql-'));
+    const fakePsql = join(fakeBin, 'psql');
+
+    try {
+      await writeFile(
+        fakePsql,
+        '#!/bin/sh\ncat >/dev/null\nprintf "seeded row output\\n"\n',
+        'utf8',
+      );
+      await chmod(fakePsql, 0o755);
+
+      const { stdout, stderr } = await execFileAsync(
+        process.execPath,
+        [new URL('../scripts/create-board.mjs', import.meta.url).pathname],
+        {
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}:${process.env.PATH}`,
+            SUPABASE_DB_URL: 'postgresql://provisioner:secret@db.example.test/postgres',
+            AUDIT_TRACKER_SITE_URL: 'https://example.test/audit/',
+          },
+        },
+      );
+
+      expect(stderr).toBe('');
+      expect(stdout).toMatch(
+        /^https:\/\/example\.test\/audit\/#board=[A-Za-z0-9_-]{43}\n$/,
+      );
+    } finally {
+      await rm(fakeBin, { recursive: true, force: true });
+    }
   });
 });

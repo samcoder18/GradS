@@ -28,7 +28,7 @@ export async function runSeedWithPsql({ connectionUrl, tokenHash }) {
   await new Promise((resolve, reject) => {
     const child = spawn('psql', args, {
       env: { ...process.env, PGDATABASE: connectionUrl },
-      stdio: ['pipe', 'inherit', 'inherit'],
+      stdio: ['pipe', 'ignore', 'inherit'],
     });
 
     child.once('error', reject);

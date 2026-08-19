@@ -2,8 +2,9 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
+grant usage on schema extensions to anon;
 
-select plan(49);
+select plan(55);
 
 select has_table('public', 'boards', 'boards table exists');
 select has_table('public', 'tasks', 'tasks table exists');
@@ -95,10 +96,17 @@ select results_eq(
 );
 select is((select count(*)::integer from public.task_events where event_type = 'created'), 15, 'seed records creation events');
 
+select private.seed_audit_board(
+  extensions.digest(convert_to('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', 'UTF8'), 'sha256')
+);
+
+set local role anon;
+
+select is(current_user::text, 'anon', 'capability flow executes as anon');
 select is(
   jsonb_array_length(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'),
   15,
-  'valid token reads the board snapshot'
+  'anon reads the board snapshot with a valid capability'
 );
 select throws_ok(
   $$select public.board_snapshot('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')$$,
@@ -125,54 +133,99 @@ select throws_ok(
   'null authors are rejected by RPC validation'
 );
 
-select lives_ok(
-  $$select public.create_task(
+select is(
+  (
+    select public.create_task(
     'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
     '  Reviewer  ',
     '  Follow up  ',
     'Details',
     'P2'
-  )$$,
-  'valid token can create a scoped task'
-);
-select is((select count(*)::integer from public.tasks), 16, 'new task is persisted');
-select is((select count(*)::integer from public.task_events where event_type = 'created'), 16, 'new task writes a creation event');
-
-select lives_ok(
-  $$select public.set_task_completed(
-    'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
-    'Reviewer',
-    (select id from public.tasks where title = 'Follow up'),
-    true
-  )$$,
-  'task completion can be changed through the RPC'
+    )->>'title'
+  ),
+  'Follow up',
+  'anon creates a scoped task with a valid capability'
 );
 select is(
-  (select count(*)::integer from public.task_events where event_type = 'completion_changed'),
-  1,
-  'completion change writes one status event'
+  jsonb_array_length(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'),
+  16,
+  'anon-created task is visible in the capability snapshot'
 );
 
-select lives_ok(
-  $$select public.add_task_comment(
+select is(
+  (
+    select public.set_task_completed(
     'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
     'Reviewer',
-    (select id from public.tasks where title = 'Follow up'),
-    'Looks good'
-  )$$,
-  'task comments can be added through the RPC'
+    (
+      select (task->>'id')::uuid
+      from jsonb_array_elements(
+        public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'
+      ) as task
+      where task->>'title' = 'Follow up'
+    ),
+    true
+    )->>'completed'
+  ),
+  'true',
+  'anon changes task completion with a valid capability'
 );
-select lives_ok(
-  $$select public.add_board_comment(
+select is(
+  (
+    select jsonb_array_length(task->'events')
+    from jsonb_array_elements(
+      public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'
+    ) as task
+    where task->>'title' = 'Follow up'
+  ),
+  2,
+  'anon observes the server-written creation and completion events'
+);
+
+select is(
+  (
+    select public.add_task_comment(
+    'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
+    'Reviewer',
+    (
+      select (task->>'id')::uuid
+      from jsonb_array_elements(
+        public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'
+      ) as task
+      where task->>'title' = 'Follow up'
+    ),
+    'Looks good'
+    )->>'body'
+  ),
+  'Looks good',
+  'anon adds a task comment with a valid capability'
+);
+select is(
+  (
+    select jsonb_array_length(task->'comments')
+    from jsonb_array_elements(
+      public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'
+    ) as task
+    where task->>'title' = 'Follow up'
+  ),
+  1,
+  'anon observes its persisted task comment in the snapshot'
+);
+select is(
+  (
+    select public.add_board_comment(
     'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
     'Reviewer',
     'General note'
-  )$$,
-  'board comments can be added through the RPC'
+    )->>'body'
+  ),
+  'General note',
+  'anon adds a board comment with a valid capability'
 );
-
-select private.seed_audit_board(
-  extensions.digest(convert_to('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', 'UTF8'), 'sha256')
+select is(
+  jsonb_array_length(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'comments'),
+  1,
+  'anon observes its persisted board comment in the snapshot'
 );
 select is(
   jsonb_array_length(public.board_snapshot('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB')->'tasks'),
@@ -183,13 +236,46 @@ select throws_ok(
   $$select public.add_task_comment(
     'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
     'Reviewer',
-    (select id from public.tasks where title = 'Follow up'),
+    (
+      select (task->>'id')::uuid
+      from jsonb_array_elements(
+        public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'
+      ) as task
+      where task->>'title' = 'Follow up'
+    ),
     'Cross-board comment'
   )$$,
   'P0002',
   'task not found',
   'task comment RPC rejects a task from another board'
 );
+select throws_ok(
+  $$select * from public.boards$$,
+  '42501',
+  'permission denied for table boards',
+  'anon direct SELECT is denied'
+);
+select throws_ok(
+  $$insert into public.tasks default values$$,
+  '42501',
+  'permission denied for table tasks',
+  'anon direct INSERT is denied'
+);
+select throws_ok(
+  $$update public.tasks set completed = true$$,
+  '42501',
+  'permission denied for table tasks',
+  'anon direct UPDATE is denied'
+);
+select throws_ok(
+  $$delete from public.board_comments$$,
+  '42501',
+  'permission denied for table board_comments',
+  'anon direct DELETE is denied'
+);
+
+reset role;
+
 select throws_ok(
   $$insert into public.task_comments (board_id, task_id, author, body)
     values (
