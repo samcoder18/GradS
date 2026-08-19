@@ -7,6 +7,7 @@ import {
   normalizeTaskInput,
   parseBoardToken,
 } from '../src/domain.js';
+import * as domain from '../src/domain.js';
 
 describe('filterTasks', () => {
   test('keeps tasks matching the selected priority and completion state', () => {
@@ -25,6 +26,41 @@ describe('filterTasks', () => {
     const tasks = [{ id: 'a', priority: 'P0', completed: false }];
 
     expect(filterTasks(tasks, { priority: 'all', status: 'all' })).toEqual(tasks);
+  });
+
+  test('matches a case-insensitive search across task titles and descriptions', () => {
+    const tasks = [
+      { id: 'a', title: 'Keyboard navigation', description: 'Fix the map', priority: 'P1', completed: false },
+      { id: 'b', title: 'Image loading', description: 'Responsive bottles', priority: 'P1', completed: false },
+    ];
+
+    expect(filterTasks(tasks, { search: '  MAP  ' })).toEqual([tasks[0]]);
+  });
+});
+
+describe('priorityProgress', () => {
+  test('reports stable P0 through P3 totals and percentages, including empty priorities', () => {
+    const tasks = [
+      { priority: 'P0', completed: true },
+      { priority: 'P0', completed: false },
+      { priority: 'P2', completed: true },
+    ];
+
+    expect(domain.priorityProgress(tasks)).toEqual([
+      { priority: 'P0', total: 2, completed: 1, percent: 50 },
+      { priority: 'P1', total: 0, completed: 0, percent: 0 },
+      { priority: 'P2', total: 1, completed: 1, percent: 100 },
+      { priority: 'P3', total: 0, completed: 0, percent: 0 },
+    ]);
+  });
+});
+
+describe('visitor input normalization', () => {
+  test('trims display names and comments while enforcing the public RPC bounds', () => {
+    expect(domain.normalizeDisplayName('  Ada Lovelace  ')).toEqual({ valid: true, value: 'Ada Lovelace' });
+    expect(domain.normalizeDisplayName('   ')).toEqual({ valid: false, error: 'Enter your display name.' });
+    expect(domain.normalizeComment('  Ship it.  ')).toEqual({ valid: true, value: 'Ship it.' });
+    expect(domain.normalizeComment('   ')).toEqual({ valid: false, error: 'Enter a comment.' });
   });
 });
 
@@ -65,6 +101,13 @@ describe('normalizeTaskInput', () => {
       errors: { title: 'Enter a task title.', priority: 'Choose P0, P1, P2, or P3.' },
     });
   });
+
+  test('rejects a task title longer than the public RPC limit', () => {
+    expect(normalizeTaskInput({ title: 'x'.repeat(201), priority: 'P1' })).toEqual({
+      valid: false,
+      errors: { title: 'Use 200 characters or fewer.' },
+    });
+  });
 });
 
 describe('parseBoardToken', () => {
@@ -98,5 +141,21 @@ describe('static app foundation', () => {
 
     expect(config).toContain('SUPABASE_ANON_KEY');
     expect(config).not.toMatch(/service[_-]?role/i);
+  });
+
+  test('provides accessible tracker, report, form, chat, and task-detail controls', async () => {
+    const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+    const document = new JSDOM(html).window.document;
+
+    expect(document.querySelector('[role="tablist"]')).not.toBeNull();
+    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(document.querySelector('#task-search')).not.toBeNull();
+    expect(document.querySelector('#priority-filter')).not.toBeNull();
+    expect(document.querySelector('#status-filter')).not.toBeNull();
+    expect(document.querySelector('#new-task-dialog form')).not.toBeNull();
+    expect(document.querySelector('#display-name-dialog form')).not.toBeNull();
+    expect(document.querySelector('#task-drawer[role="dialog"]')).not.toBeNull();
+    expect(document.querySelector('#board-comment-form')).not.toBeNull();
+    expect(document.querySelector('#report-disclosures')).not.toBeNull();
   });
 });
