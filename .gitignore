@@ -3,8 +3,8 @@ coverage/
 dist/
 .superpowers/
 config.js
+src/config.js
 .env
 .env.*
 !.env.example
 supabase/.temp/
-

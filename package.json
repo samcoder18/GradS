@@ -6,7 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "build": "node scripts/validate-static.mjs"
+    "build": "node scripts/build.mjs",
+    "preview": "vite --host 127.0.0.1"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.56.1"
