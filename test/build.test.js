@@ -44,7 +44,7 @@ describe('deployment build', () => {
     expect(packageJson.scripts['test:db']).toBe('supabase test db');
     expect(supabaseConfig).toMatch(/project_id\s*=\s*"audit-tracker"/);
     expect(supabaseConfig).toMatch(/major_version\s*=\s*17/);
-    expect(databaseTest).toContain('select plan(55);');
+    expect(databaseTest).toMatch(/select plan\(65\);/);
     expect(databaseTest).toContain('select * from finish();');
   });
 

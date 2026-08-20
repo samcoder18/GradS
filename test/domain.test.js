@@ -131,6 +131,47 @@ describe('parseBoardToken', () => {
   });
 });
 
+describe('chat input contracts', () => {
+  test('accepts images and audio while returning safe attachment metadata', () => {
+    const result = domain.normalizeAttachments([
+      { name: '  room photo.JPG ', type: 'image/jpeg', size: 1200 },
+      { name: 'note.webm', type: 'audio/webm', size: 2400 },
+    ]);
+
+    expect(result).toEqual({
+      valid: true,
+      value: [
+        { name: 'room photo.JPG', mimeType: 'image/jpeg', size: 1200, type: 'image' },
+        { name: 'note.webm', mimeType: 'audio/webm', size: 2400, type: 'audio' },
+      ],
+    });
+  });
+
+  test('rejects unsupported, oversized, and too many attachments', () => {
+    expect(domain.normalizeAttachments([{ name: 'clip.mp4', type: 'video/mp4', size: 10 }])).toEqual({
+      valid: false,
+      error: 'Прикреплять можно только изображения и аудио.',
+    });
+    expect(domain.normalizeAttachments([{ name: 'huge.png', type: 'image/png', size: domain.MAX_CHAT_ATTACHMENT_BYTES + 1 }])).toEqual({
+      valid: false,
+      error: 'Размер одного файла не должен превышать 8 МБ.',
+    });
+    expect(domain.normalizeAttachments(Array.from({ length: 6 }, (_, index) => ({
+      name: `photo-${index}.png`, type: 'image/png', size: 10,
+    })))).toEqual({
+      valid: false,
+      error: 'В одном сообщении можно отправить не больше 5 вложений.',
+    });
+  });
+
+  test('normalizes reply ids and exposes the fixed reaction palette', () => {
+    expect(domain.normalizeReplyId('  comment-7  ')).toBe('comment-7');
+    expect(domain.normalizeReplyId('')).toBeNull();
+    expect(domain.normalizeReplyId(null)).toBeNull();
+    expect(domain.REACTION_OPTIONS).toEqual(['👍', '❤️', '🎉', '👀']);
+  });
+});
+
 describe('static app foundation', () => {
   test('provides semantic landmarks and announced application status', async () => {
     const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');

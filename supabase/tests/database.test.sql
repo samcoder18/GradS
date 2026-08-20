@@ -4,13 +4,24 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 grant usage on schema extensions to anon;
 
-select plan(55);
+select plan(65);
 
 select has_table('public', 'boards', 'boards table exists');
 select has_table('public', 'tasks', 'tasks table exists');
 select has_table('public', 'task_events', 'task events table exists');
 select has_table('public', 'task_comments', 'task comments table exists');
 select has_table('public', 'board_comments', 'board comments table exists');
+select has_table('public', 'comment_reactions', 'comment reactions table exists');
+select ok(
+  (
+    select count(*) = 4
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name in ('task_comments', 'board_comments')
+      and column_name in ('parent_comment_id', 'attachments')
+  ),
+  'both comment tables expose reply and attachment metadata'
+);
 
 select ok((select relrowsecurity from pg_class where oid = 'public.boards'::regclass), 'boards uses RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.tasks'::regclass), 'tasks uses RLS');
@@ -28,6 +39,9 @@ select has_function('public', 'create_task', array['text', 'text', 'text', 'text
 select has_function('public', 'set_task_completed', array['text', 'text', 'uuid', 'boolean'], 'set_task_completed RPC exists');
 select has_function('public', 'add_task_comment', array['text', 'text', 'uuid', 'text'], 'add_task_comment RPC exists');
 select has_function('public', 'add_board_comment', array['text', 'text', 'text'], 'add_board_comment RPC exists');
+select has_function('public', 'add_board_message', array['text', 'text', 'text', 'uuid', 'jsonb'], 'add_board_message RPC exists');
+select has_function('public', 'add_task_message', array['text', 'text', 'uuid', 'text', 'uuid', 'jsonb'], 'add_task_message RPC exists');
+select has_function('public', 'toggle_comment_reaction', array['text', 'text', 'uuid', 'text'], 'toggle_comment_reaction RPC exists');
 
 select ok(
   (select prosecdef from pg_proc where oid = 'public.board_snapshot(text)'::regprocedure),
@@ -226,6 +240,63 @@ select is(
   jsonb_array_length(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'comments'),
   1,
   'anon observes its persisted board comment in the snapshot'
+);
+select is(
+  (
+    select public.add_board_message(
+      'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
+      'Reviewer',
+      'Photo reply',
+      (select id from public.board_comments where body = 'General note'),
+      '[{"type":"image","name":"photo.jpg","mimeType":"image/jpeg","size":12,"path":"FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M/photo.jpg","url":"https://cdn.example.test/photo.jpg"}]'::jsonb
+    )->>'parent_comment_id'
+  ),
+  (select id::text from public.board_comments where body = 'General note'),
+  'anon adds a board message with a reply and image metadata'
+);
+select is(
+  (
+    select jsonb_array_length(message->'attachments')
+    from jsonb_array_elements(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'comments') as message
+    where message->>'body' = 'Photo reply'
+  ),
+  1,
+  'snapshot preserves message attachment metadata'
+);
+select is(
+  (
+    select public.toggle_comment_reaction(
+      'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
+      'Reviewer',
+      (select id from public.board_comments where body = 'Photo reply'),
+      '👍'
+    )->>'reacted'
+  ),
+  'true',
+  'anon adds a reaction through the capability RPC'
+);
+select is(
+  (
+    select jsonb_array_length(message->'reactions')
+    from jsonb_array_elements(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'comments') as message
+    where message->>'body' = 'Photo reply'
+  ),
+  1,
+  'snapshot aggregates message reactions'
+);
+select is(
+  (
+    select public.add_task_message(
+      'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
+      'Reviewer',
+      (select id from public.tasks where title = 'Follow up'),
+      'Task voice',
+      null,
+      '[{"type":"audio","name":"voice.webm","mimeType":"audio/webm","size":24,"path":"FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M/voice.webm","url":"https://cdn.example.test/voice.webm"}]'::jsonb
+    )->>'body'
+  ),
+  'Task voice',
+  'anon adds an audio task message with a valid capability'
 );
 select is(
   jsonb_array_length(public.board_snapshot('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB')->'tasks'),

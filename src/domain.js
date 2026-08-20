@@ -131,3 +131,50 @@ export function parseBoardToken(fragment) {
 
   return tokens[0];
 }
+
+export const MAX_CHAT_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+export const MAX_CHAT_ATTACHMENTS = 5;
+export const REACTION_OPTIONS = ['👍', '❤️', '🎉', '👀'];
+
+/**
+ * Converts File-like values into the safe metadata accepted by the message RPC.
+ * The binary File itself deliberately stays outside the serializable message payload.
+ * @param {Iterable<{name?: unknown, type?: unknown, size?: unknown}> | null | undefined} files
+ */
+export function normalizeAttachments(files) {
+  const values = Array.from(files ?? []);
+  if (values.length > MAX_CHAT_ATTACHMENTS) {
+    return { valid: false, error: 'В одном сообщении можно отправить не больше 5 вложений.' };
+  }
+
+  const normalized = [];
+  for (const file of values) {
+    const mimeType = String(file?.type ?? '').trim().toLocaleLowerCase();
+    const type = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('audio/') ? 'audio' : null;
+    if (!type) {
+      return { valid: false, error: 'Прикреплять можно только изображения и аудио.' };
+    }
+    const size = Number(file?.size ?? 0);
+    if (!Number.isFinite(size) || size < 0 || size > MAX_CHAT_ATTACHMENT_BYTES) {
+      return { valid: false, error: 'Размер одного файла не должен превышать 8 МБ.' };
+    }
+    const name = String(file?.name ?? 'Вложение').trim().replace(/\s+/g, ' ') || 'Вложение';
+    normalized.push({
+      name: name.slice(0, 160),
+      mimeType,
+      size,
+      type,
+    });
+  }
+
+  return { valid: true, value: normalized };
+}
+
+/**
+ * Keeps reply references opaque and prevents selector/path injection.
+ * @param {unknown} input
+ */
+export function normalizeReplyId(input) {
+  const value = String(input ?? '').trim();
+  return /^[A-Za-z0-9_-]{1,120}$/.test(value) ? value : null;
+}

@@ -1,11 +1,13 @@
 import {
   auditProgress,
   filterTasks,
-  normalizeComment,
+  normalizeAttachments,
   normalizeDisplayName,
+  normalizeReplyId,
   normalizeTaskInput,
   parseBoardToken,
   priorityProgress,
+  REACTION_OPTIONS,
 } from './domain.js';
 import {
   createBoardApi,
@@ -22,11 +24,16 @@ const MUTATION_CONTROL_SELECTOR = [
   '#new-task-form select',
   '#new-task-form button[type="submit"]',
   '#board-comment-form textarea',
+  '#board-comment-form input[type="file"]',
+  '#board-record-toggle',
   '#board-comment-form button[type="submit"]',
   '#task-comment-form textarea',
+  '#task-comment-form input[type="file"]',
+  '#task-record-toggle',
   '#task-comment-form button[type="submit"]',
   '#drawer-completed',
   '[data-complete-task]',
+  '[data-reaction-comment]',
 ].join(', ');
 
 function element(document, tag, className, text) {
@@ -53,6 +60,18 @@ function formatDate(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date);
+}
+
+function formatBytes(bytes) {
+  const size = Number(bytes) || 0;
+  if (size < 1024) return `${size} Б`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} КБ`;
+  return `${(size / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+function formatRecordingTime(seconds) {
+  const value = Math.max(0, Number(seconds) || 0);
+  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
 }
 
 function appendEmpty(document, container, text) {
@@ -163,10 +182,17 @@ export function createAuditApp({
     progressTrack: document.querySelector('.progress-track'),
     progressFill: document.querySelector('#progress-fill'),
     priorityProgress: document.querySelector('#priority-progress'),
+    chatPanel: document.querySelector('.chat-panel'),
+    fullscreenChat: document.querySelector('#toggle-chat-fullscreen'),
     boardComments: document.querySelector('#board-comments'),
     boardCommentCount: document.querySelector('#board-comment-count'),
     boardCommentForm: document.querySelector('#board-comment-form'),
     boardComment: document.querySelector('#board-comment'),
+    boardReply: document.querySelector('#board-reply'),
+    boardReplyLabel: document.querySelector('#board-reply-label'),
+    boardAttachmentDrafts: document.querySelector('#board-attachment-drafts'),
+    boardFileInput: document.querySelector('#board-file-input'),
+    boardRecordToggle: document.querySelector('#board-record-toggle'),
     boardCommentError: document.querySelector('#board-comment-error'),
     newTaskDialog: document.querySelector('#new-task-dialog'),
     newTaskForm: document.querySelector('#new-task-form'),
@@ -188,6 +214,11 @@ export function createAuditApp({
     taskCommentCount: document.querySelector('#task-comment-count'),
     taskCommentForm: document.querySelector('#task-comment-form'),
     taskComment: document.querySelector('#task-comment'),
+    taskReply: document.querySelector('#task-reply'),
+    taskReplyLabel: document.querySelector('#task-reply-label'),
+    taskAttachmentDrafts: document.querySelector('#task-attachment-drafts'),
+    taskFileInput: document.querySelector('#task-file-input'),
+    taskRecordToggle: document.querySelector('#task-record-toggle'),
     taskCommentError: document.querySelector('#task-comment-error'),
   };
   let board = { board: null, tasks: [], comments: [] };
@@ -198,6 +229,11 @@ export function createAuditApp({
   let eventsBound = false;
   let refreshPromise = null;
   let mutationPending = false;
+  let chatFullscreen = false;
+  const composers = {
+    board: { drafts: [], replyTo: null, recorder: null, recordingStartedAt: 0, recordingTimer: null, recordingStream: null },
+    task: { drafts: [], replyTo: null, recorder: null, recordingStartedAt: 0, recordingTimer: null, recordingStream: null },
+  };
   const mutationsAvailable = Boolean(api) && !initializationError;
   const dialogStack = [];
 
@@ -262,7 +298,84 @@ export function createAuditApp({
     }
   }
 
-  function renderComments(container, comments, emptyText) {
+  function storedAuthor() {
+    const result = normalizeDisplayName(window.localStorage.getItem(DISPLAY_NAME_KEY));
+    return result.valid ? result.value : null;
+  }
+
+  function commentById(chatKey, id) {
+    const comments = chatKey === 'board' ? board.comments : taskById(selectedTaskId)?.comments ?? [];
+    return comments.find((comment) => comment.id === id) ?? null;
+  }
+
+  function safeMediaUrl(value) {
+    const url = String(value ?? '').trim();
+    if (!url) return null;
+    try {
+      const parsed = new URL(url, window.location.href);
+      return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function renderAttachmentList(container, attachments, className = 'comment-attachments') {
+    if (!Array.isArray(attachments) || !attachments.length) return;
+    const list = element(document, 'div', className);
+    for (const attachment of attachments) {
+      const url = safeMediaUrl(attachment?.url);
+      if (!url) continue;
+      const card = element(document, 'div', 'comment-attachment');
+      const name = String(attachment?.name || 'Вложение');
+      if (attachment?.type === 'image') {
+        const link = element(document, 'a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        const image = element(document, 'img');
+        image.src = url;
+        image.alt = name;
+        link.append(image);
+        card.append(link);
+      } else {
+        const audio = element(document, 'audio');
+        audio.controls = true;
+        audio.preload = 'metadata';
+        audio.src = url;
+        card.append(audio);
+      }
+      card.append(element(document, 'span', 'attachment-name', `${name} · ${formatBytes(attachment?.size)}`));
+      list.append(card);
+    }
+    if (list.childElementCount) container.append(list);
+  }
+
+  function renderReactionButtons(item, comment, chatKey) {
+    const actions = element(document, 'div', 'comment-actions');
+    const reply = element(document, 'button', 'comment-action', 'Ответить');
+    reply.type = 'button';
+    reply.dataset.replyComment = comment.id;
+    reply.dataset.chatScope = chatKey;
+    actions.append(reply);
+    const reactions = Array.isArray(comment.reactions) ? comment.reactions : [];
+    const author = storedAuthor();
+    for (const emoji of REACTION_OPTIONS) {
+      const reaction = reactions.find((candidate) => candidate?.emoji === emoji);
+      const count = Number(reaction?.count || 0);
+      const authors = Array.isArray(reaction?.authors) ? reaction.authors : [];
+      const button = element(document, 'button', `reaction-chip${author && authors.includes(author) ? ' is-active' : ''}`, `${emoji}${count ? ` ${count}` : ''}`);
+      button.type = 'button';
+      button.dataset.reactionComment = comment.id;
+      button.dataset.reactionEmoji = emoji;
+      button.dataset.chatScope = chatKey;
+      button.setAttribute('aria-label', `${author && authors.includes(author) ? 'Убрать' : 'Поставить'} реакцию ${emoji}`);
+      button.setAttribute('aria-pressed', String(Boolean(author && authors.includes(author))));
+      actions.append(button);
+    }
+    item.append(actions);
+  }
+
+  function renderComments(container, comments, emptyText, chatKey) {
     container.replaceChildren();
     if (!comments.length) {
       container.append(element(document, 'li', 'empty-state', emptyText));
@@ -271,15 +384,100 @@ export function createAuditApp({
 
     for (const comment of comments) {
       const item = element(document, 'li', 'comment');
+      item.tabIndex = -1;
+      item.dataset.commentId = comment.id;
+      const parentId = normalizeReplyId(comment.parent_comment_id);
+      if (parentId) item.dataset.parentCommentId = parentId;
       const header = element(document, 'div', 'comment-meta');
       const author = element(document, 'strong', null, comment.author);
       const time = element(document, 'time', null, formatDate(comment.created_at));
       time.dateTime = comment.created_at;
-      const body = element(document, 'p', null, comment.body);
       header.append(author, time);
-      item.append(header, body);
+      item.append(header);
+      if (parentId) {
+        const parent = comments.find((candidate) => candidate.id === parentId);
+        if (parent) {
+          const quote = element(document, 'button', 'comment-reply-quote', `↩ ${parent.author}: ${String(parent.body || 'Вложение').slice(0, 90)}`);
+          quote.type = 'button';
+          quote.dataset.jumpComment = parentId;
+          quote.dataset.chatScope = chatKey;
+          item.append(quote);
+        }
+      }
+      if (comment.body) item.append(element(document, 'p', null, comment.body));
+      renderAttachmentList(item, comment.attachments);
+      renderReactionButtons(item, comment, chatKey);
       container.append(item);
     }
+  }
+
+  function composerNodes(chatKey) {
+    return chatKey === 'board'
+      ? {
+          form: nodes.boardCommentForm,
+          body: nodes.boardComment,
+          reply: nodes.boardReply,
+          replyLabel: nodes.boardReplyLabel,
+          drafts: nodes.boardAttachmentDrafts,
+          fileInput: nodes.boardFileInput,
+          record: nodes.boardRecordToggle,
+          error: nodes.boardCommentError,
+        }
+      : {
+          form: nodes.taskCommentForm,
+          body: nodes.taskComment,
+          reply: nodes.taskReply,
+          replyLabel: nodes.taskReplyLabel,
+          drafts: nodes.taskAttachmentDrafts,
+          fileInput: nodes.taskFileInput,
+          record: nodes.taskRecordToggle,
+          error: nodes.taskCommentError,
+        };
+  }
+
+  function releaseDraftUrl(draft) {
+    if (draft?.previewUrl && typeof window.URL?.revokeObjectURL === 'function') {
+      window.URL.revokeObjectURL(draft.previewUrl);
+    }
+  }
+
+  function renderComposer(chatKey) {
+    const state = composers[chatKey];
+    const current = composerNodes(chatKey);
+    current.reply.hidden = !state.replyTo;
+    current.replyLabel.textContent = state.replyTo
+      ? `Ответ для ${state.replyTo.author}: ${state.replyTo.preview}`
+      : '';
+    current.drafts.replaceChildren();
+    for (const [index, draft] of state.drafts.entries()) {
+      const card = element(document, 'div', 'attachment-draft');
+      const file = draft.file;
+      const previewUrl = draft.previewUrl || (typeof window.URL?.createObjectURL === 'function' ? window.URL.createObjectURL(file) : null);
+      draft.previewUrl = previewUrl;
+      if (draft.meta.type === 'image' && previewUrl) {
+        const image = element(document, 'img');
+        image.src = previewUrl;
+        image.alt = draft.meta.name;
+        card.append(image);
+      } else if (draft.meta.type === 'audio' && previewUrl) {
+        const audio = element(document, 'audio');
+        audio.controls = true;
+        audio.preload = 'metadata';
+        audio.src = previewUrl;
+        card.append(audio);
+      }
+      card.append(element(document, 'span', 'attachment-name', `${draft.meta.name} · ${formatBytes(draft.meta.size)}`));
+      const remove = element(document, 'button', 'remove-attachment', 'Удалить');
+      remove.type = 'button';
+      remove.dataset.removeAttachment = String(index);
+      remove.dataset.chatScope = chatKey;
+      card.append(remove);
+      current.drafts.append(card);
+    }
+    current.record.setAttribute('aria-pressed', String(Boolean(state.recorder)));
+    current.record.textContent = state.recorder ? '■ Стоп' : '◉ Голос';
+    if (state.recorder) current.record.dataset.recordingTime = formatRecordingTime(Math.floor((Date.now() - state.recordingStartedAt) / 1000));
+    else delete current.record.dataset.recordingTime;
   }
 
   function taskById(id) {
@@ -320,7 +518,8 @@ export function createAuditApp({
       }
     }
     nodes.taskCommentCount.textContent = String(task.comments.length);
-    renderComments(nodes.taskComments, task.comments, 'Комментариев пока нет.');
+    renderComments(nodes.taskComments, task.comments, 'Комментариев пока нет.', 'task');
+    renderComposer('task');
   }
 
   function renderTasks() {
@@ -369,7 +568,8 @@ export function createAuditApp({
     renderProgress();
     renderTasks();
     nodes.boardCommentCount.textContent = String(board.comments.length);
-    renderComments(nodes.boardComments, board.comments, 'В общем чате пока тихо.');
+    renderComments(nodes.boardComments, board.comments, 'В общем чате пока тихо.', 'board');
+    renderComposer('board');
     renderDrawer();
   }
 
@@ -486,6 +686,202 @@ export function createAuditApp({
     }
   }
 
+  function clearComposer(chatKey) {
+    const state = composers[chatKey];
+    for (const draft of state.drafts) releaseDraftUrl(draft);
+    state.drafts = [];
+    state.replyTo = null;
+    const current = composerNodes(chatKey);
+    current.form.reset();
+    current.fileInput.value = '';
+    current.error.textContent = '';
+    renderComposer(chatKey);
+  }
+
+  function setComposerError(chatKey, message) {
+    composerNodes(chatKey).error.textContent = message || '';
+  }
+
+  function handleFileSelection(chatKey, files) {
+    const state = composers[chatKey];
+    const selected = [...(files ?? [])];
+    const result = normalizeAttachments([...state.drafts.map((draft) => draft.file), ...selected]);
+    if (!result.valid) {
+      setComposerError(chatKey, result.error);
+      composerNodes(chatKey).fileInput.value = '';
+      return;
+    }
+    const start = state.drafts.length;
+    state.drafts.push(...selected.map((file, index) => ({ file, meta: result.value[start + index] })));
+    setComposerError(chatKey, '');
+    composerNodes(chatKey).fileInput.value = '';
+    renderComposer(chatKey);
+  }
+
+  function removeDraft(chatKey, index) {
+    const state = composers[chatKey];
+    const [draft] = state.drafts.splice(index, 1);
+    releaseDraftUrl(draft);
+    renderComposer(chatKey);
+  }
+
+  function setReply(chatKey, commentId) {
+    const comment = commentById(chatKey, commentId);
+    if (!comment) return;
+    composers[chatKey].replyTo = {
+      id: comment.id,
+      author: comment.author,
+      preview: String(comment.body || 'Вложение').slice(0, 90),
+    };
+    renderComposer(chatKey);
+    composerNodes(chatKey).body.focus();
+  }
+
+  function cancelReply(chatKey) {
+    composers[chatKey].replyTo = null;
+    renderComposer(chatKey);
+    composerNodes(chatKey).body.focus();
+  }
+
+  async function submitChatMessage(chatKey) {
+    const current = composerNodes(chatKey);
+    const state = composers[chatKey];
+    const body = current.body.value.trim();
+    if (!body && !state.drafts.length) {
+      setComposerError(chatKey, 'Напишите сообщение или добавьте вложение.');
+      current.body.focus();
+      return;
+    }
+    setComposerError(chatKey, '');
+    const replyId = state.replyTo?.id ?? null;
+    const saved = await performMutation(async (author) => {
+      if (!state.drafts.length && !replyId && chatKey === 'board' && typeof api.addBoardMessage !== 'function') {
+        return api.addBoardComment({ author, body });
+      }
+      if (!state.drafts.length && !replyId && chatKey === 'task' && typeof api.addTaskMessage !== 'function') {
+        return api.addTaskComment({ author, taskId: selectedTaskId, body });
+      }
+      if (typeof api.uploadMedia !== 'function' && state.drafts.length) {
+        throw new Error('Загрузка вложений сейчас недоступна.');
+      }
+      const attachments = [];
+      for (const draft of state.drafts) {
+        attachments.push(await api.uploadMedia({ file: draft.file }));
+      }
+      if (chatKey === 'board') {
+        return api.addBoardMessage({ author, body, parentCommentId: replyId, attachments });
+      }
+      return api.addTaskMessage({ author, taskId: selectedTaskId, body, parentCommentId: replyId, attachments });
+    });
+    if (saved) clearComposer(chatKey);
+  }
+
+  async function toggleReaction(chatKey, commentId, emoji) {
+    if (typeof api.toggleReaction !== 'function') {
+      setComposerError(chatKey, 'Реакции сейчас недоступны.');
+      return;
+    }
+    await performMutation((author) => api.toggleReaction({ author, commentId, emoji }));
+  }
+
+  function handleCommentAction(chatKey, event) {
+    const reply = event.target.closest('[data-reply-comment]');
+    if (reply) {
+      setReply(chatKey, reply.dataset.replyComment);
+      return;
+    }
+    const cancel = event.target.closest('[data-cancel-reply]');
+    if (cancel) {
+      cancelReply(chatKey);
+      return;
+    }
+    const reaction = event.target.closest('[data-reaction-comment]');
+    if (reaction) {
+      void toggleReaction(chatKey, reaction.dataset.reactionComment, reaction.dataset.reactionEmoji);
+      return;
+    }
+    const jump = event.target.closest('[data-jump-comment]');
+    if (jump) {
+      const container = chatKey === 'board' ? nodes.boardComments : nodes.taskComments;
+      const target = [...container.querySelectorAll('[data-comment-id]')].find((item) => item.dataset.commentId === jump.dataset.jumpComment);
+      target?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      target?.focus?.({ preventScroll: true });
+    }
+  }
+
+  function setChatFullscreen(enabled) {
+    chatFullscreen = enabled;
+    nodes.chatPanel.classList.toggle('is-fullscreen', enabled);
+    document.body.classList.toggle('chat-is-fullscreen', enabled);
+    nodes.fullscreenChat.setAttribute('aria-pressed', String(enabled));
+    nodes.fullscreenChat.setAttribute('aria-label', enabled ? 'Свернуть чат' : 'Открыть чат на весь экран');
+    nodes.fullscreenChat.title = enabled ? 'Свернуть чат' : 'Открыть чат на весь экран';
+    nodes.fullscreenChat.textContent = enabled ? '×' : '⛶';
+  }
+
+  async function toggleRecording(chatKey) {
+    const state = composers[chatKey];
+    if (state.recorder) {
+      state.recorder.stop();
+      return;
+    }
+    const Recorder = window.MediaRecorder;
+    const getUserMedia = window.navigator?.mediaDevices?.getUserMedia;
+    if (typeof Recorder !== 'function' || typeof getUserMedia !== 'function') {
+      setComposerError(chatKey, 'Запись голоса не поддерживается этим браузером. Можно прикрепить готовый аудиофайл.');
+      return;
+    }
+    try {
+      const stream = await getUserMedia.call(window.navigator.mediaDevices, { audio: true });
+      const recorder = new Recorder(stream);
+      const chunks = [];
+      state.recorder = recorder;
+      state.recordingStream = stream;
+      state.recordingStartedAt = Date.now();
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data?.size) chunks.push(event.data);
+      });
+      recorder.addEventListener('stop', () => {
+        const mimeType = recorder.mimeType || 'audio/webm';
+        const blob = new window.Blob(chunks, { type: mimeType });
+        const fileName = `voice-${Date.now()}.webm`;
+        let file = blob;
+        if (typeof window.File === 'function') file = new window.File([blob], fileName, { type: mimeType });
+        else Object.defineProperty(file, 'name', { value: fileName });
+        const result = normalizeAttachments([file]);
+        if (result.valid) {
+          const current = composers[chatKey];
+          const combined = normalizeAttachments([...current.drafts.map((draft) => draft.file), file]);
+          if (combined.valid) current.drafts.push({ file, meta: result.value[0] });
+          else setComposerError(chatKey, combined.error);
+        } else setComposerError(chatKey, result.error);
+        state.recorder = null;
+        state.recordingStream = null;
+        if (state.recordingTimer !== null) window.clearInterval(state.recordingTimer);
+        state.recordingTimer = null;
+        renderComposer(chatKey);
+      });
+      recorder.start();
+      state.recordingTimer = window.setInterval(() => renderComposer(chatKey), 1000);
+      setComposerError(chatKey, '');
+      renderComposer(chatKey);
+    } catch (error) {
+      state.recorder = null;
+      state.recordingStream = null;
+      setComposerError(chatKey, error?.message || 'Не удалось получить доступ к микрофону.');
+      renderComposer(chatKey);
+    }
+  }
+
+  function stopRecording(chatKey) {
+    const state = composers[chatKey];
+    if (state.recordingTimer !== null) window.clearInterval(state.recordingTimer);
+    state.recordingTimer = null;
+    if (state.recorder) state.recorder.stop();
+    for (const track of state.recordingStream?.getTracks?.() ?? []) track.stop();
+    state.recordingStream = null;
+  }
+
   async function handleCompletion(checkbox) {
     const taskId = checkbox.dataset.completeTask;
     if (!taskById(taskId)) return;
@@ -558,6 +954,25 @@ export function createAuditApp({
     nodes.taskList.addEventListener('change', (event) => {
       if (event.target.matches('[data-complete-task]')) void handleCompletion(event.target);
     });
+    nodes.boardComments.addEventListener('click', (event) => handleCommentAction('board', event));
+    nodes.taskComments.addEventListener('click', (event) => handleCommentAction('task', event));
+    nodes.boardFileInput.addEventListener('change', () => handleFileSelection('board', nodes.boardFileInput.files));
+    nodes.taskFileInput.addEventListener('change', () => handleFileSelection('task', nodes.taskFileInput.files));
+    nodes.boardRecordToggle.addEventListener('click', () => void toggleRecording('board'));
+    nodes.taskRecordToggle.addEventListener('click', () => void toggleRecording('task'));
+    nodes.boardCommentForm.addEventListener('click', (event) => {
+      const remove = event.target.closest('[data-remove-attachment]');
+      if (remove) removeDraft('board', Number(remove.dataset.removeAttachment));
+      const cancel = event.target.closest('[data-cancel-reply]');
+      if (cancel) cancelReply('board');
+    });
+    nodes.taskCommentForm.addEventListener('click', (event) => {
+      const remove = event.target.closest('[data-remove-attachment]');
+      if (remove) removeDraft('task', Number(remove.dataset.removeAttachment));
+      const cancel = event.target.closest('[data-cancel-reply]');
+      if (cancel) cancelReply('task');
+    });
+    nodes.fullscreenChat.addEventListener('click', () => setChatFullscreen(!chatFullscreen));
     nodes.drawerCompleted.addEventListener('change', () => void handleCompletion(nodes.drawerCompleted));
     document.querySelector('[data-close-drawer]').addEventListener('click', () => closeManagedDialog(nodes.drawer));
     document.querySelector('#open-new-task').addEventListener('click', () => {
@@ -610,23 +1025,22 @@ export function createAuditApp({
       }
     });
 
-    nodes.boardCommentForm.addEventListener('submit', async (event) => {
+    nodes.boardCommentForm.addEventListener('submit', (event) => {
       event.preventDefault();
-      const result = normalizeComment(nodes.boardComment.value);
-      nodes.boardCommentError.textContent = result.valid ? '' : result.error;
-      if (!result.valid) return;
-      const saved = await performMutation((author) => api.addBoardComment({ author, body: result.value }));
-      if (saved) nodes.boardCommentForm.reset();
+      void submitChatMessage('board');
     });
-    nodes.taskCommentForm.addEventListener('submit', async (event) => {
+    nodes.taskCommentForm.addEventListener('submit', (event) => {
       event.preventDefault();
-      const result = normalizeComment(nodes.taskComment.value);
-      nodes.taskCommentError.textContent = result.valid ? '' : result.error;
-      if (!result.valid || !selectedTaskId) return;
-      const taskId = selectedTaskId;
-      const saved = await performMutation((author) => api.addTaskComment({ author, taskId, body: result.value }));
-      if (saved) nodes.taskCommentForm.reset();
+      if (!selectedTaskId) return;
+      void submitChatMessage('task');
     });
+    for (const [chatKey, current] of [['board', nodes.boardComment], ['task', nodes.taskComment]]) {
+      current.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+        event.preventDefault();
+        current.form.requestSubmit?.();
+      });
+    }
 
     document.querySelector('#expand-report').addEventListener('click', () => {
       for (const details of document.querySelectorAll('#report-disclosures details')) details.open = true;
@@ -642,6 +1056,12 @@ export function createAuditApp({
 
   function handleDocumentKeydown(event) {
     if (event.key !== 'Escape') return;
+    if (chatFullscreen) {
+      event.preventDefault();
+      setChatFullscreen(false);
+      nodes.fullscreenChat.focus();
+      return;
+    }
     const entry = dialogStack.findLast(({ dialog }) => dialog.hasAttribute('open'));
     if (!entry) return;
     event.preventDefault();
@@ -678,6 +1098,9 @@ export function createAuditApp({
     stop() {
       if (!started) return;
       started = false;
+      stopRecording('board');
+      stopRecording('task');
+      if (chatFullscreen) setChatFullscreen(false);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('keydown', handleDocumentKeydown);
       if (intervalId !== null) clearIntervalFn(intervalId);

@@ -132,4 +132,65 @@ describe('createSupabaseRpcClient', () => {
       details: 'Capability mismatch',
     });
   });
+
+  test('uploads a media file to the board-scoped Storage path and returns a public URL', async () => {
+    const calls = [];
+    const rpcClient = client.createSupabaseRpcClient({
+      url: 'https://audit-project.supabase.co/',
+      anonKey: 'public-anon-key',
+      fetchFn: async (...args) => {
+        calls.push(args);
+        return { ok: true, status: 200, async json() { return { Key: 'ignored' }; } };
+      },
+    });
+    const file = { name: 'room photo.jpg', type: 'image/jpeg', size: 3 };
+
+    const result = await rpcClient.upload({
+      token: 'opaque-token',
+      file,
+    });
+
+    expect(result.type).toBe('image');
+    expect(result.mimeType).toBe('image/jpeg');
+    expect(result.name).toBe('room photo.jpg');
+    expect(result.size).toBe(3);
+    expect(result.path).toMatch(/^opaque-token\/[^/]+-room-photo\.jpg$/);
+    expect(result.url).toContain('/storage/v1/object/public/audit-media/opaque-token/');
+    expect(calls[0][0]).toMatch(/^https:\/\/audit-project\.supabase\.co\/storage\/v1\/object\/audit-media\/opaque-token\//);
+    expect(calls[0][1]).toMatchObject({
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer public-anon-key',
+        apikey: 'public-anon-key',
+        'Content-Type': 'image/jpeg',
+        'x-upsert': 'false',
+      },
+      body: file,
+    });
+  });
+});
+
+describe('chat message API', () => {
+  test('publishes replies, attachments, and reactions through exact RPC contracts', async () => {
+    const calls = [];
+    const api = client.createBoardApi({
+      async rpc(name, args) {
+        calls.push([name, args]);
+        return { data: { ok: true }, error: null };
+      },
+      async upload({ file }) {
+        return { type: 'image', name: file.name, mimeType: file.type, size: file.size, path: 'p', url: 'u' };
+      },
+    }, 'opaque-token');
+
+    await api.addBoardMessage({ author: 'Ada', body: 'Photo', parentCommentId: 'comment-1', attachments: [{ path: 'p', url: 'u' }] });
+    await api.addTaskMessage({ author: 'Ada', taskId: 'task-1', body: 'Reply', parentCommentId: null, attachments: [] });
+    await api.toggleReaction({ author: 'Ada', commentId: 'comment-1', emoji: '❤️' });
+
+    expect(calls).toEqual([
+      ['add_board_message', { token: 'opaque-token', author: 'Ada', body: 'Photo', parent_comment_id: 'comment-1', attachments: [{ path: 'p', url: 'u' }] }],
+      ['add_task_message', { token: 'opaque-token', author: 'Ada', task_id: 'task-1', body: 'Reply', parent_comment_id: null, attachments: [] }],
+      ['toggle_comment_reaction', { token: 'opaque-token', author: 'Ada', comment_id: 'comment-1', emoji: '❤️' }],
+    ]);
+  });
 });

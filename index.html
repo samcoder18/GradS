@@ -62,13 +62,30 @@
           </div>
 
           <aside class="chat-panel" aria-labelledby="chat-heading">
-            <div class="panel-heading"><div><p class="eyebrow">Для всей команды</p><h2 id="chat-heading">Общий чат</h2></div><span id="board-comment-count" class="count-badge">0</span></div>
+            <div class="panel-heading chat-panel-heading">
+              <div><p class="eyebrow">Для всей команды</p><h2 id="chat-heading">Общий чат</h2></div>
+              <div class="chat-heading-actions">
+                <span id="board-comment-count" class="count-badge">0</span>
+                <button id="toggle-chat-fullscreen" class="icon-button" type="button" aria-pressed="false" aria-label="Открыть чат на весь экран" title="Открыть чат на весь экран">⛶</button>
+              </div>
+            </div>
             <ol id="board-comments" class="comment-list"></ol>
-            <form id="board-comment-form" class="comment-form">
+            <form id="board-comment-form" class="comment-form chat-composer" data-chat-scope="board">
               <label for="board-comment">Новое сообщение</label>
-              <textarea id="board-comment" name="body" rows="3" maxlength="4000" required placeholder="Напишите сообщение…"></textarea>
+              <textarea id="board-comment" name="body" rows="3" maxlength="4000" placeholder="Напишите сообщение…"></textarea>
+              <div id="board-reply" class="reply-banner" hidden>
+                <span id="board-reply-label"></span>
+                <button class="icon-button" type="button" data-cancel-reply="board" aria-label="Отменить ответ">×</button>
+              </div>
+              <div id="board-attachment-drafts" class="attachment-drafts" aria-live="polite"></div>
               <p id="board-comment-error" class="field-error" role="alert"></p>
-              <button class="button button-secondary" type="submit">Отправить</button>
+              <div class="composer-toolbar">
+                <label class="button button-quiet attachment-button" for="board-file-input">＋ Фото
+                  <input id="board-file-input" type="file" accept="image/*,audio/*" multiple hidden />
+                </label>
+                <button id="board-record-toggle" class="button button-quiet record-button" type="button" aria-pressed="false">◉ Голос</button>
+                <button class="button button-secondary" type="submit">Отправить</button>
+              </div>
             </form>
           </aside>
         </section>
@@ -125,8 +142,20 @@
           <div class="panel-heading"><h3 id="task-comments-heading">Комментарии</h3><span id="task-comment-count" class="count-badge">0</span></div>
           <ol id="task-comments" class="comment-list"></ol>
           <form id="task-comment-form" class="comment-form">
-            <label for="task-comment">Новый комментарий</label><textarea id="task-comment" name="body" rows="3" maxlength="4000" required></textarea>
-            <p id="task-comment-error" class="field-error" role="alert"></p><button class="button button-secondary" type="submit">Отправить</button>
+            <label for="task-comment">Новое сообщение</label><textarea id="task-comment" name="body" rows="3" maxlength="4000"></textarea>
+            <div id="task-reply" class="reply-banner" hidden>
+              <span id="task-reply-label"></span>
+              <button class="icon-button" type="button" data-cancel-reply="task" aria-label="Отменить ответ">×</button>
+            </div>
+            <div id="task-attachment-drafts" class="attachment-drafts" aria-live="polite"></div>
+            <p id="task-comment-error" class="field-error" role="alert"></p>
+            <div class="composer-toolbar">
+              <label class="button button-quiet attachment-button" for="task-file-input">＋ Фото
+                <input id="task-file-input" type="file" accept="image/*,audio/*" multiple hidden />
+              </label>
+              <button id="task-record-toggle" class="button button-quiet record-button" type="button" aria-pressed="false">◉ Голос</button>
+              <button class="button button-secondary" type="submit">Отправить</button>
+            </div>
           </form>
         </section>
       </div>

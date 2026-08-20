@@ -27,6 +27,18 @@ class SupabaseRpcError extends Error {
   }
 }
 
+function safeStorageName(name) {
+  return String(name || 'attachment')
+    .normalize('NFKD')
+    .replace(/[^\p{Letter}\p{Number}._-]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || 'attachment';
+}
+
+function mediaType(mimeType) {
+  return String(mimeType || '').toLocaleLowerCase().startsWith('audio/') ? 'audio' : 'image';
+}
+
 /**
  * Minimal dependency-free browser adapter for Supabase's PostgREST RPC endpoint.
  * @param {{url: string, anonKey: string, fetchFn?: typeof fetch}} options
@@ -36,6 +48,50 @@ export function createSupabaseRpcClient({ url, anonKey, fetchFn = globalThis.fet
   if (baseUrl.protocol !== 'https:') throw new Error('SUPABASE_URL must use HTTPS.');
   if (!anonKey) throw new Error('SUPABASE_ANON_KEY is required.');
   if (typeof fetchFn !== 'function') throw new Error('This browser cannot send Supabase requests.');
+
+  async function upload({ token, file }) {
+    const fileName = String(file?.name || 'attachment');
+    const randomPart = globalThis.crypto?.randomUUID?.()
+      || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const path = `${token}/${randomPart}-${safeStorageName(fileName)}`;
+    const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+    const endpoint = new URL(`/storage/v1/object/audit-media/${encodedPath}`, baseUrl);
+    const response = await fetchFn(endpoint.href, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${anonKey}`,
+        apikey: anonKey,
+        'Content-Type': file?.type || 'application/octet-stream',
+        'x-upsert': 'false',
+      },
+      body: file,
+    });
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      // Storage errors can be empty; the HTTP status still remains useful.
+    }
+    if (!response.ok) {
+      throw new SupabaseRpcError({
+        message: payload?.message || `Supabase Storage failed with HTTP ${response.status}.`,
+        status: response.status,
+        code: payload?.statusCode || payload?.code,
+        details: payload?.error,
+        hint: null,
+      });
+    }
+
+    const publicPath = path.split('/').map(encodeURIComponent).join('/');
+    return {
+      type: mediaType(file?.type),
+      name: fileName,
+      mimeType: file?.type || 'application/octet-stream',
+      size: Number(file?.size || 0),
+      path,
+      url: new URL(`/storage/v1/object/public/audit-media/${publicPath}`, baseUrl).href,
+    };
+  }
 
   return {
     async rpc(name, args) {
@@ -70,6 +126,7 @@ export function createSupabaseRpcClient({ url, anonKey, fetchFn = globalThis.fet
       }
       return { data: payload, error: null };
     },
+    upload,
   };
 }
 
@@ -264,5 +321,30 @@ export function createBoardApi(supabase, token) {
       call('add_task_comment', { token, author, task_id: taskId, body }),
     addBoardComment: ({ author, body }) =>
       call('add_board_comment', { token, author, body }),
+    addBoardMessage: ({ author, body, parentCommentId = null, attachments = [] }) =>
+      call('add_board_message', {
+        token,
+        author,
+        body,
+        parent_comment_id: parentCommentId,
+        attachments,
+      }),
+    addTaskMessage: ({ author, taskId, body, parentCommentId = null, attachments = [] }) =>
+      call('add_task_message', {
+        token,
+        author,
+        task_id: taskId,
+        body,
+        parent_comment_id: parentCommentId,
+        attachments,
+      }),
+    toggleReaction: ({ author, commentId, emoji }) =>
+      call('toggle_comment_reaction', { token, author, comment_id: commentId, emoji }),
+    uploadMedia: ({ file }) => {
+      if (typeof supabase.upload !== 'function') {
+        throw new Error('Supabase Storage is not configured.');
+      }
+      return supabase.upload({ token, file });
+    },
   };
 }

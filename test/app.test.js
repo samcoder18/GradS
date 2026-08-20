@@ -602,4 +602,97 @@ describe('audit tracker DOM client', () => {
     expect(main.focus).toHaveBeenCalledTimes(1);
     app.stop();
   });
+
+  test('renders safe media, replies, reaction counts, and reply composer state', async () => {
+    const boardSnapshot = snapshot();
+    boardSnapshot.comments = [
+      {
+        id: 'comment-1',
+        author: 'Ada',
+        body: '<b>Keep it plain</b>',
+        created_at: '2026-08-20T09:00:00Z',
+        attachments: [],
+        reactions: [{ emoji: '👍', count: 2, authors: ['Ada', 'Lin'] }],
+      },
+      {
+        id: 'comment-2',
+        parent_comment_id: 'comment-1',
+        author: 'Lin',
+        body: 'Reply with media',
+        created_at: '2026-08-20T09:05:00Z',
+        attachments: [{ type: 'image', name: 'photo.jpg', mimeType: 'image/jpeg', size: 120, url: 'https://cdn.example.test/photo.jpg' }],
+        reactions: [],
+      },
+    ];
+    const { app, dom } = await setup({ snapshotValue: boardSnapshot });
+    const { document } = dom.window;
+
+    expect(document.querySelectorAll('#board-comments [data-comment-id]')).toHaveLength(2);
+    expect(document.querySelector('#board-comments img')?.alt).toBe('photo.jpg');
+    expect(document.querySelector('#board-comments b')).toBeNull();
+    expect(document.querySelector('[data-reaction-comment="comment-1"]')?.textContent).toBe('👍 2');
+
+    document.querySelector('[data-reply-comment="comment-1"]').click();
+    expect(document.querySelector('#board-reply').hidden).toBe(false);
+    expect(document.querySelector('#board-reply-label').textContent).toContain('Ada');
+    document.querySelector('[data-cancel-reply="board"]').click();
+    expect(document.querySelector('#board-reply').hidden).toBe(true);
+    app.stop();
+  });
+
+  test('supports fullscreen chat with Escape focus restoration and image drafts', async () => {
+    const { app, dom } = await setup();
+    const { document } = dom.window;
+    const toggle = document.querySelector('#toggle-chat-fullscreen');
+
+    toggle.click();
+    expect(document.querySelector('.chat-panel').classList.contains('is-fullscreen')).toBe(true);
+    expect(document.body.classList.contains('chat-is-fullscreen')).toBe(true);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+
+    const file = new dom.window.File(['image'], 'photo.png', { type: 'image/png' });
+    Object.defineProperty(document.querySelector('#board-file-input'), 'files', { configurable: true, value: [file] });
+    document.querySelector('#board-file-input').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    expect(document.querySelectorAll('#board-attachment-drafts .attachment-draft')).toHaveLength(1);
+
+    document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector('.chat-panel').classList.contains('is-fullscreen')).toBe(false);
+    expect(document.activeElement).toBe(toggle);
+    app.stop();
+  });
+
+  test('uploads attachments before sending a reply through the new message API', async () => {
+    const calls = [];
+    const boardSnapshot = snapshot();
+    boardSnapshot.comments = [{ id: 'comment-1', author: 'Ada', body: 'Original', created_at: '2026-08-20T09:00:00Z', attachments: [], reactions: [] }];
+    const api = {
+      snapshot: vi.fn(async () => structuredClone(boardSnapshot)),
+      createTask: vi.fn(),
+      setCompleted: vi.fn(),
+      addTaskComment: vi.fn(),
+      addBoardComment: vi.fn(),
+      uploadMedia: vi.fn(async ({ file }) => ({ type: 'image', name: file.name, mimeType: file.type, size: file.size, path: 'p', url: 'https://cdn.example.test/p' })),
+      addBoardMessage: vi.fn(async (values) => calls.push(values)),
+      toggleReaction: vi.fn(),
+    };
+    const { app, dom } = await setup({ snapshotValue: boardSnapshot, apiOverride: api });
+    const { document } = dom.window;
+    document.querySelector('[data-reply-comment="comment-1"]').click();
+    document.querySelector('#board-comment').value = 'With photo';
+    const file = new dom.window.File(['image'], 'photo.png', { type: 'image/png' });
+    Object.defineProperty(document.querySelector('#board-file-input'), 'files', { configurable: true, value: [file] });
+    document.querySelector('#board-file-input').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    document.querySelector('#board-comment-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    await settle();
+
+    expect(api.uploadMedia).toHaveBeenCalledTimes(1);
+    expect(calls).toContainEqual({
+      author: 'Ada',
+      body: 'With photo',
+      parentCommentId: 'comment-1',
+      attachments: [{ type: 'image', name: 'photo.png', mimeType: 'image/png', size: 5, path: 'p', url: 'https://cdn.example.test/p' }],
+    });
+    app.stop();
+  });
 });

@@ -508,6 +508,33 @@ textarea {
   padding: 1rem;
 }
 
+.chat-panel-heading {
+  align-items: start;
+}
+
+.chat-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.chat-panel.is-fullscreen {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  flex-direction: column;
+  border: 0;
+  border-radius: 0;
+  padding: clamp(1rem, 3vw, 2rem) max(1rem, calc((100vw - 960px) / 2));
+}
+
+body.chat-is-fullscreen {
+  overflow: hidden;
+}
+
 .chat-panel h2 {
   font-size: 1.25rem;
 }
@@ -526,10 +553,23 @@ textarea {
   overflow: auto;
 }
 
+.chat-panel.is-fullscreen .comment-list {
+  flex: 1;
+  width: 100%;
+  max-height: none;
+  overscroll-behavior: contain;
+}
+
 .comment {
+  position: relative;
   border-radius: 0.75rem;
   background: #f3efe7;
   padding: 0.75rem;
+}
+
+.comment[data-parent-comment-id] {
+  margin-left: 1.25rem;
+  border-left: 0.2rem solid var(--accent-soft);
 }
 
 .comment-meta,
@@ -549,6 +589,161 @@ textarea {
   line-height: 1.45;
 }
 
+.comment-reply-quote {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-left: 0.2rem solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  padding: 0.1rem 0.6rem;
+  text-align: left;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.comment-reply-quote:hover {
+  color: var(--accent);
+}
+
+.comment-attachments,
+.attachment-drafts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.comment-attachment,
+.attachment-draft {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--surface);
+}
+
+.comment-attachment img,
+.attachment-draft img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.35;
+  object-fit: cover;
+}
+
+.comment-attachment audio,
+.attachment-draft audio {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.attachment-name {
+  display: block;
+  overflow: hidden;
+  padding: 0.35rem 0.45rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.65rem;
+}
+
+.comment-action,
+.reaction-chip {
+  min-height: 1.9rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.22rem 0.55rem;
+  font-size: 0.74rem;
+}
+
+.comment-action:hover,
+.reaction-chip:hover,
+.reaction-chip.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.reply-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-left: 0.2rem solid var(--accent);
+  background: var(--accent-soft);
+  padding: 0.45rem 0.55rem 0.45rem 0.75rem;
+  color: var(--accent-dark);
+  font-size: 0.78rem;
+}
+
+.reply-banner .icon-button {
+  min-height: 1.8rem;
+  width: 1.8rem;
+  font-size: 1rem;
+}
+
+.composer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.composer-toolbar .button {
+  min-height: 2.25rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.78rem;
+}
+
+.attachment-button {
+  cursor: pointer;
+}
+
+.record-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.record-button[data-recording-time]:after {
+  content: " · " attr(data-recording-time);
+  font-variant-numeric: tabular-nums;
+}
+
+.attachment-draft {
+  padding-bottom: 1.55rem;
+}
+
+.attachment-draft .remove-attachment {
+  position: absolute;
+  right: 0.3rem;
+  bottom: 0.3rem;
+  min-height: 1.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: white;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.7rem;
+}
+
+.attachment-draft .remove-attachment:hover {
+  background: var(--accent);
+}
+
 .comment-form {
   display: grid;
   gap: 0.55rem;
@@ -557,6 +752,10 @@ textarea {
 
 .comment-form .button {
   justify-self: end;
+}
+
+.chat-panel.is-fullscreen .comment-form {
+  width: 100%;
 }
 
 .empty-state {
