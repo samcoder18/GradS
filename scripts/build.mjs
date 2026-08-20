@@ -4,7 +4,6 @@ import { resolve } from 'node:path';
 const runtimeFiles = [
   'index.html',
   'styles.css',
-  'audit-report.md',
   'roadmap-report.md',
   'src/app.js',
   'src/client.js',

@@ -117,34 +117,6 @@ summary:focus-visible {
   background: rgb(255 253 248 / 72%);
 }
 
-.workspace-tabs {
-  display: inline-flex;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgb(255 253 248 / 72%);
-}
-
-.workspace-tabs button {
-  min-height: 2.5rem;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  padding: 0.45rem 1rem;
-  font-weight: 750;
-}
-
-.workspace-tabs button[aria-pressed="true"] {
-  background: var(--accent);
-  color: white;
-}
-
-[data-workspace-panel] > .view-tabs {
-  margin-top: 1.25rem;
-}
-
 .view-tabs button {
   min-height: 2.5rem;
   border: 0;
@@ -1166,15 +1138,6 @@ dialog::backdrop {
     justify-self: start;
   }
 
-  .workspace-tabs {
-    flex: 1;
-    justify-content: stretch;
-  }
-
-  .workspace-tabs button {
-    flex: 1;
-  }
-
   .search-field {
     grid-column: 1 / -1;
   }
@@ -1207,7 +1170,6 @@ dialog::backdrop {
     height: 2rem;
   }
 
-  .workspace-tabs button,
   .view-tabs button {
     min-height: 2.35rem;
     padding-inline: 0.7rem;

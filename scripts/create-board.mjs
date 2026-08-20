@@ -17,7 +17,7 @@ export function buildShareUrl(siteUrl, token) {
 }
 
 export async function runSeedWithPsql({ connectionUrl, tokenHash }) {
-  const sql = "select private.seed_audit_board(decode(:'board_token_hash', 'hex'));\n";
+  const sql = "with seeded as (select private.seed_audit_board(decode(:'board_token_hash', 'hex')) as board_id) select private.normalize_roadmap_only(board_id) from seeded;\n";
   const args = [
     '--no-psqlrc',
     '--set=ON_ERROR_STOP=1',

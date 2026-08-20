@@ -4,7 +4,7 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 grant usage on schema extensions to anon;
 
-select plan(85);
+select plan(86);
 
 select has_table('public', 'boards', 'boards table exists');
 select has_table('public', 'tasks', 'tasks table exists');
@@ -124,7 +124,7 @@ select results_eq(
   $$values (1::smallint, 11::bigint), (2::smallint, 39::bigint), (3::smallint, 6::bigint)$$,
   'roadmap seed preserves the three agreed iteration totals'
 );
-select is((select count(*)::integer from public.tasks where completion_mode = 'derived'), 6, 'stage one has six derived roadmap tasks');
+select is((select count(*)::integer from public.tasks where completion_mode = 'derived'), 0, 'roadmap-only seed does not create derived tasks');
 select private.seed_roadmap_tasks((select id from public.boards limit 1));
 select is((select count(*)::integer from public.tasks), 71, 'roadmap backfill is idempotent for an existing board');
 
@@ -149,8 +149,8 @@ set local role anon;
 select is(current_user::text, 'anon', 'capability flow executes as anon');
 select is(
   jsonb_array_length(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'),
-  71,
-  'anon reads the board snapshot with a valid capability'
+  56,
+  'anon reads only roadmap tasks with a valid capability'
 );
 select throws_ok(
   $$select public.board_snapshot('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')$$,
@@ -179,87 +179,77 @@ select throws_ok(
   'author must be 1 to 80 characters',
   'null authors are rejected by RPC validation'
 );
-
-select is(
-  (
-    select public.create_task(
+select throws_ok(
+  $$select public.create_task(
     'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
-    '  Reviewer  ',
-    '  Follow up  ',
-    'Details',
+    'Reviewer',
+    'Audit task',
+    '',
     'P2',
     'audit',
     null,
     null
+  )$$,
+  '22023',
+  'only roadmap tasks can be created',
+  'anon cannot create an audit task through the roadmap-only RPC'
+);
+
+select is(
+  (
+    select public.create_task(
+      'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
+      '  Reviewer  ',
+      '  Follow up  ',
+      'Details',
+      null,
+      'roadmap',
+      2::smallint,
+      2::smallint
     )->>'title'
   ),
   'Follow up',
-  'anon creates a scoped task with a valid capability'
+  'anon creates a scoped roadmap task with a valid capability'
 );
 select is(
   jsonb_array_length(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'),
-  72,
+  57,
   'anon-created task is visible in the capability snapshot'
 );
 
 select is(
   (
-    select (task->>'completed')::boolean
-    from jsonb_array_elements(
-      public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'
-    ) as task
+    select count(*)::integer
+    from jsonb_array_elements(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks') as task
     where task->>'completion_mode' = 'derived'
-      and task->>'title' like 'P0: форма офиса%'
   ),
-  false,
-  'a linked roadmap task starts open while its audit tasks are open'
+  0,
+  'roadmap snapshot does not expose derived tasks'
 );
 select is(
   (
-    select jsonb_array_length(task->'audit_links')
-    from jsonb_array_elements(
-      public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'
-    ) as task
-    where task->>'completion_mode' = 'derived'
-      and task->>'title' like 'P0: форма офиса%'
+    select count(*)::integer
+    from jsonb_array_elements(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks') as task
+    where jsonb_array_length(coalesce(task->'audit_links', '[]'::jsonb)) > 0
   ),
-  2,
-  'a linked roadmap task exposes only its two scoped audit references'
+  0,
+  'roadmap snapshot does not expose audit task links'
 );
-select throws_ok(
-  $$select public.set_task_completed(
+select is(
+  (
+    select public.set_task_completed(
     'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
     'Reviewer',
     (
       select (task->>'id')::uuid
       from jsonb_array_elements(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks') as task
-      where task->>'completion_mode' = 'derived' and task->>'title' like 'P0: форма офиса%'
+      where task->>'title' like 'P0: форма офиса%'
     ),
     true
-  )$$,
-  '22023',
-  'derived roadmap task status is managed by audit links',
-  'anon cannot manually complete a derived roadmap task'
-);
-select public.set_task_completed(
-  'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
-  'Reviewer',
-  (
-    select (task->>'id')::uuid
-    from jsonb_array_elements(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks') as task
-    where task->>'track' = 'audit' and (task->>'position')::integer = 1
+    )->>'completed'
   ),
-  true
-);
-select public.set_task_completed(
-  'FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M',
-  'Reviewer',
-  (
-    select (task->>'id')::uuid
-    from jsonb_array_elements(public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks') as task
-    where task->>'track' = 'audit' and (task->>'position')::integer = 2
-  ),
-  true
+  'true',
+  'anon can manually complete a stage one roadmap task'
 );
 select is(
   (
@@ -267,11 +257,10 @@ select is(
     from jsonb_array_elements(
       public.board_snapshot('FowEeAvGTBYSyLZ_hyK-x8FHD0sC6XeSNJCCxk1pq8M')->'tasks'
     ) as task
-    where task->>'completion_mode' = 'derived'
-      and task->>'title' like 'P0: форма офиса%'
+    where task->>'title' like 'P0: форма офиса%'
   ),
   true,
-  'a linked roadmap task is completed when all its audit tasks are completed'
+  'manual stage one completion is visible in the roadmap snapshot'
 );
 select is(
   (
@@ -478,8 +467,8 @@ select is(
 );
 select is(
   jsonb_array_length(public.board_snapshot('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB')->'tasks'),
-  71,
-  'a second capability sees only its own board tasks'
+  56,
+  'a second capability sees only its own roadmap tasks'
 );
 select throws_ok(
   $$select public.add_task_comment(

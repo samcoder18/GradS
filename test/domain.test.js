@@ -238,7 +238,7 @@ describe('static app foundation', () => {
 
     expect(document.querySelector('header')).not.toBeNull();
     expect(document.querySelector('main')).not.toBeNull();
-    expect(document.querySelector('nav[aria-label="Рабочее пространство"]')).not.toBeNull();
+    expect(document.querySelector('nav[aria-label="Разделы roadmap"]')).not.toBeNull();
     expect(document.querySelector('[role="status"][aria-live="polite"]')).not.toBeNull();
   });
 
@@ -249,12 +249,11 @@ describe('static app foundation', () => {
     expect(config).not.toMatch(/service[_-]?role/i);
   });
 
-  test('provides accessible audit and roadmap workspaces, source documents, and task controls', async () => {
+  test('provides an accessible roadmap workspace, strategy, and task controls', async () => {
     const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
     const document = new JSDOM(html).window.document;
 
     expect(document.querySelector('[role="tablist"]')).not.toBeNull();
-    expect(document.querySelectorAll('[data-workspace-tab]')).toHaveLength(2);
     expect(document.querySelector('#roadmap-workspace')).not.toBeNull();
     expect(document.querySelector('#roadmap-tracker')).not.toBeNull();
     expect(document.querySelector('#roadmap-strategy')).not.toBeNull();
@@ -262,21 +261,18 @@ describe('static app foundation', () => {
     expect(document.querySelector('#roadmap-iteration-progress')).not.toBeNull();
     expect(document.querySelector('#roadmap-search')).not.toBeNull();
     expect(document.querySelector('#roadmap-status-filter')).not.toBeNull();
-    expect(document.querySelector('#task-search')).not.toBeNull();
-    expect(document.querySelector('#priority-filter')).not.toBeNull();
-    expect(document.querySelector('#status-filter')).not.toBeNull();
     expect(document.querySelector('#new-task-dialog form')).not.toBeNull();
     expect(document.querySelector('#display-name-dialog form')).not.toBeNull();
     expect(document.querySelector('#task-drawer[role="dialog"]')).not.toBeNull();
     expect(document.querySelector('#board-comment-form')).not.toBeNull();
-    expect(document.querySelector('#report-disclosures')).not.toBeNull();
+    expect(document.querySelector('#roadmap-strategy-disclosures')).not.toBeNull();
   });
 
   test('keeps the roadmap workspace alongside the rich board composer', async () => {
     const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
     const document = new JSDOM(html).window.document;
 
-    expect(document.querySelector('[data-workspace-tab="roadmap"]')).not.toBeNull();
+    expect(document.querySelector('#roadmap-tracker-tab')).not.toBeNull();
     expect(document.querySelector('#roadmap-workspace')).not.toBeNull();
     expect(document.querySelector('#board-file-input')).not.toBeNull();
     expect(document.querySelector('#board-record-toggle')).not.toBeNull();

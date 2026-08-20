@@ -23,9 +23,10 @@ describe('deployment build', () => {
   test('ships a compact tracker shell without the experimental studio chrome', async () => {
     const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 
-    expect(html).toContain('class="workspace-tabs"');
-    expect(html).toContain('data-workspace-tab="audit"');
-    expect(html).toContain('data-workspace-tab="roadmap"');
+    expect(html).not.toContain('class="workspace-tabs"');
+    expect(html).not.toContain('data-workspace-tab="audit"');
+    expect(html).toContain('id="roadmap-workspace"');
+    expect(html).not.toContain('audit-report.md');
     expect(html).not.toContain('class="app-shell"');
     expect(html).not.toContain('class="site-sidebar"');
     expect(html).not.toContain('class="workspace-identity"');
@@ -97,7 +98,7 @@ describe('deployment build', () => {
     expect(supabaseConfig).toMatch(/project_id\s*=\s*"audit-tracker"/);
     expect(supabaseConfig).toMatch(/major_version\s*=\s*17/);
     expect(supabaseConfig).toMatch(/\[storage\]\s*\n\s*enabled\s*=\s*true/);
-    expect(databaseTest).toContain('select plan(85);');
+    expect(databaseTest).toContain('select plan(86);');
     expect(databaseTest).toContain('select * from finish();');
   });
 
@@ -116,7 +117,7 @@ describe('deployment build', () => {
       const html = await readFile(join(outputDirectory, 'index.html'), 'utf8');
       const client = await readFile(join(outputDirectory, 'src/client.js'), 'utf8');
 
-      expect(rootFiles.sort()).toEqual(['audit-report.md', 'index.html', 'roadmap-report.md', 'src', 'styles.css']);
+      expect(rootFiles.sort()).toEqual(['index.html', 'roadmap-report.md', 'src', 'styles.css']);
       expect(sourceFiles.sort()).toEqual(['app.js', 'client.js', 'config.js', 'domain.js', 'roadmap.js']);
       expect(config).toContain('SUPABASE_URL = "https://audit-project.supabase.co"');
       expect(config).toContain('SUPABASE_ANON_KEY = "public-anon-key"');

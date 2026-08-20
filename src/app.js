@@ -1,13 +1,10 @@
 import {
-  auditProgress,
-  filterTasks,
   normalizeAttachments,
   normalizeComment,
   normalizeDisplayName,
   normalizeReplyId,
   normalizeTaskInput,
   parseBoardToken,
-  priorityProgress,
   REACTION_OPTIONS,
 } from './domain.js';
 import {
@@ -23,12 +20,10 @@ import {
   roadmapIterationProgress,
   roadmapProgress,
   roadmapStageGroups,
-  roadmapStageTitle,
 } from './roadmap.js';
 
 const DISPLAY_NAME_KEY = 'audit-tracker-display-name';
 const MUTATION_CONTROL_SELECTOR = [
-  '#open-new-task',
   '#new-task-form input',
   '#new-task-form textarea',
   '#new-task-form select',
@@ -37,8 +32,6 @@ const MUTATION_CONTROL_SELECTOR = [
   '#board-comment-form input[type="file"]',
   '#board-record-toggle',
   '#board-comment-form button[type="submit"]',
-  '#roadmap-board-comment-form textarea',
-  '#roadmap-board-comment-form button[type="submit"]',
   '#task-comment-form textarea',
   '#task-comment-form input[type="file"]',
   '#task-record-toggle',
@@ -176,32 +169,17 @@ export function createAuditApp({
   window,
   api,
   initializationError = null,
-  reportMarkdown = '',
   roadmapMarkdown = '',
   setIntervalFn = window.setInterval.bind(window),
   clearIntervalFn = window.clearInterval.bind(window),
 }) {
   const nodes = {
-    auditWorkspace: document.querySelector('#audit-workspace'),
-    roadmapWorkspace: document.querySelector('#roadmap-workspace'),
-    workspaceTabs: [...document.querySelectorAll('[data-workspace-tab]')],
-    trackerTab: document.querySelector('#tracker-tab'),
     roadmapTrackerTab: document.querySelector('#roadmap-tracker-tab'),
     roadmapStrategyTab: document.querySelector('#roadmap-strategy-tab'),
     status: document.querySelector('#app-status'),
     initializationError: document.querySelector('#initialization-error'),
     initializationErrorTitle: document.querySelector('#initialization-error-title'),
     initializationErrorMessage: document.querySelector('#initialization-error-message'),
-    taskList: document.querySelector('#task-list'),
-    search: document.querySelector('#task-search'),
-    priorityFilter: document.querySelector('#priority-filter'),
-    statusFilter: document.querySelector('#status-filter'),
-    completedCount: document.querySelector('#completed-count'),
-    totalCount: document.querySelector('#total-count'),
-    progressPercent: document.querySelector('#progress-percent'),
-    progressTrack: document.querySelector('.progress-track'),
-    progressFill: document.querySelector('#progress-fill'),
-    priorityProgress: document.querySelector('#priority-progress'),
     chatPanel: document.querySelector('.chat-panel'),
     fullscreenChat: document.querySelector('#toggle-chat-fullscreen'),
     boardComments: document.querySelector('#board-comments'),
@@ -214,7 +192,6 @@ export function createAuditApp({
     boardFileInput: document.querySelector('#board-file-input'),
     boardRecordToggle: document.querySelector('#board-record-toggle'),
     boardCommentError: document.querySelector('#board-comment-error'),
-    roadmapStatus: document.querySelector('#roadmap-status'),
     roadmapTaskList: document.querySelector('#roadmap-stage-list'),
     roadmapSearch: document.querySelector('#roadmap-search'),
     roadmapStageFilter: document.querySelector('#roadmap-stage-filter'),
@@ -225,17 +202,10 @@ export function createAuditApp({
     roadmapProgressTrack: document.querySelector('#roadmap-tracker .progress-track'),
     roadmapProgressFill: document.querySelector('#roadmap-progress-fill'),
     roadmapIterationProgress: document.querySelector('#roadmap-iteration-progress'),
-    roadmapBoardComments: document.querySelector('#roadmap-board-comments'),
-    roadmapBoardCommentCount: document.querySelector('#roadmap-board-comment-count'),
-    roadmapBoardCommentForm: document.querySelector('#roadmap-board-comment-form'),
-    roadmapBoardComment: document.querySelector('#roadmap-board-comment'),
-    roadmapBoardCommentError: document.querySelector('#roadmap-board-comment-error'),
     newTaskDialog: document.querySelector('#new-task-dialog'),
     newTaskForm: document.querySelector('#new-task-form'),
     newTaskName: document.querySelector('#new-task-name'),
     newTaskDescription: document.querySelector('#new-task-description'),
-    newTaskPriority: document.querySelector('#new-task-priority'),
-    newTaskPriorityField: document.querySelector('#new-task-priority-field'),
     newTaskContext: document.querySelector('#new-task-context'),
     newTaskNameError: document.querySelector('#new-task-name-error'),
     nameDialog: document.querySelector('#display-name-dialog'),
@@ -247,10 +217,6 @@ export function createAuditApp({
     drawerTitle: document.querySelector('#drawer-title'),
     drawerDescription: document.querySelector('#drawer-description'),
     drawerCompleted: document.querySelector('#drawer-completed'),
-    drawerCompletionControl: document.querySelector('.completion-control'),
-    drawerCompletionNote: document.querySelector('#drawer-completion-note'),
-    taskAuditLinksSection: document.querySelector('#task-audit-links-section'),
-    taskAuditLinks: document.querySelector('#task-audit-links'),
     taskEvents: document.querySelector('#task-events'),
     taskComments: document.querySelector('#task-comments'),
     taskCommentCount: document.querySelector('#task-comment-count'),
@@ -276,8 +242,7 @@ export function createAuditApp({
     board: { drafts: [], replyTo: null, recorder: null, recordingStartedAt: 0, recordingTimer: null, recordingStream: null },
     task: { drafts: [], replyTo: null, recorder: null, recordingStartedAt: 0, recordingTimer: null, recordingStream: null },
   };
-  let activeWorkspace = 'audit';
-  let newTaskContext = { track: 'audit', roadmapStage: null, roadmapIteration: null };
+  let newTaskContext = { track: 'roadmap', roadmapStage: 0, roadmapIteration: 2 };
   const mutationsAvailable = Boolean(api) && !initializationError;
   const dialogStack = [];
 
@@ -302,8 +267,6 @@ export function createAuditApp({
   function setStatus(message, kind = 'ready') {
     nodes.status.textContent = message;
     nodes.status.dataset.state = kind;
-    nodes.roadmapStatus.textContent = activeWorkspace === 'roadmap' ? message : '';
-    nodes.roadmapStatus.dataset.state = kind;
   }
 
   function setMutationPending(pending) {
@@ -311,7 +274,7 @@ export function createAuditApp({
     for (const control of document.querySelectorAll(MUTATION_CONTROL_SELECTOR)) {
       control.disabled = pending || !mutationsAvailable;
     }
-    for (const form of [nodes.newTaskForm, nodes.boardCommentForm, nodes.roadmapBoardCommentForm, nodes.taskCommentForm]) {
+    for (const form of [nodes.newTaskForm, nodes.boardCommentForm, nodes.taskCommentForm]) {
       form.setAttribute('aria-busy', String(pending));
     }
   }
@@ -320,29 +283,6 @@ export function createAuditApp({
     return task.completed
       ? `Вернуть задачу «${task.title}» в работу`
       : `Отметить задачу «${task.title}» выполненной`;
-  }
-
-  function renderProgress() {
-    const auditTasks = board.tasks.filter((task) => task.track === 'audit');
-    const progress = auditProgress(auditTasks);
-    nodes.completedCount.textContent = String(progress.completed);
-    nodes.totalCount.textContent = String(progress.total);
-    nodes.progressPercent.textContent = `${progress.percent}%`;
-    nodes.progressTrack.setAttribute('aria-valuenow', String(progress.percent));
-    nodes.progressFill.style.width = `${progress.percent}%`;
-    nodes.priorityProgress.replaceChildren();
-
-    for (const item of priorityProgress(auditTasks)) {
-      const card = element(document, 'div', `priority-stat priority-${item.priority.toLowerCase()}`);
-      const label = element(document, 'strong', null, item.priority);
-      const value = element(document, 'span', null, `${item.completed}/${item.total}`);
-      const bar = element(document, 'span', 'mini-progress');
-      const fill = element(document, 'span');
-      fill.style.width = `${item.percent}%`;
-      bar.append(fill);
-      card.append(label, value, bar);
-      nodes.priorityProgress.append(card);
-    }
   }
 
   function storedAuthor() {
@@ -539,36 +479,13 @@ export function createAuditApp({
       return;
     }
 
-    const isDerivedRoadmapTask = task.track === 'roadmap' && task.completion_mode === 'derived';
-    nodes.drawerPriority.textContent = task.track === 'roadmap'
-      ? `Этап ${task.roadmap_stage} · Итерация ${task.roadmap_iteration}`
-      : `${task.priority} · задача ${task.position}`;
+    nodes.drawerPriority.textContent = `Этап ${task.roadmap_stage} · Итерация ${task.roadmap_iteration}`;
     nodes.drawerTitle.textContent = task.title;
     nodes.drawerDescription.textContent = task.description || 'Описание не добавлено.';
     nodes.drawerCompleted.checked = task.completed;
-    nodes.drawerCompletionControl.hidden = isDerivedRoadmapTask;
-    nodes.drawerCompletionNote.hidden = !isDerivedRoadmapTask;
-    nodes.drawerCompletionNote.textContent = isDerivedRoadmapTask
-      ? 'Статус рассчитывается по связанным задачам аудита.'
-      : '';
-    nodes.drawerCompleted.disabled = isDerivedRoadmapTask || mutationPending || !mutationsAvailable;
-    if (isDerivedRoadmapTask) {
-      delete nodes.drawerCompleted.dataset.completeTask;
-    } else {
-      nodes.drawerCompleted.setAttribute('aria-label', completionActionLabel(task));
-      nodes.drawerCompleted.dataset.completeTask = task.id;
-    }
-    nodes.taskAuditLinks.replaceChildren();
-    nodes.taskAuditLinksSection.hidden = !isDerivedRoadmapTask;
-    for (const auditLink of task.audit_links ?? []) {
-      const item = element(document, 'li', 'event-item');
-      const openAudit = element(document, 'button', 'task-title-button', auditLink.title);
-      openAudit.type = 'button';
-      openAudit.dataset.openAuditTask = auditLink.id;
-      const state = element(document, 'span', null, auditLink.completed ? 'Выполнена' : 'Открыта');
-      item.append(openAudit, state);
-      nodes.taskAuditLinks.append(item);
-    }
+    nodes.drawerCompleted.disabled = mutationPending || !mutationsAvailable;
+    nodes.drawerCompleted.setAttribute('aria-label', completionActionLabel(task));
+    nodes.drawerCompleted.dataset.completeTask = task.id;
     nodes.taskEvents.replaceChildren();
     if (!task.events.length) {
       nodes.taskEvents.append(element(document, 'li', 'empty-state', 'История пока пуста.'));
@@ -593,55 +510,31 @@ export function createAuditApp({
   }
 
   function renderTaskCard(task) {
-    const isRoadmap = task.track === 'roadmap';
-    const isDerived = isRoadmap && task.completion_mode === 'derived';
-    const priorityClass = isRoadmap ? 'roadmap-task' : `priority-${task.priority.toLowerCase()}`;
-    const card = element(document, 'article', `task-card ${priorityClass}${task.completed ? ' is-complete' : ''}`);
+    const card = element(document, 'article', `task-card roadmap-task${task.completed ? ' is-complete' : ''}`);
     const top = element(document, 'div', 'task-card-top');
-    const label = element(document, 'span', 'priority-badge', isRoadmap ? `Этап ${task.roadmap_stage}` : task.priority);
-    const state = element(document, 'span', 'task-state', task.completed ? 'Выполнена' : isDerived ? 'Из аудита' : 'Открыта');
+    const label = element(document, 'span', 'priority-badge', `Этап ${task.roadmap_stage}`);
+    const state = element(document, 'span', 'task-state', task.completed ? 'Выполнена' : 'Открыта');
     top.append(label, state);
     const title = element(document, 'h3');
     const open = element(document, 'button', 'task-title-button', task.title);
     open.type = 'button';
     open.dataset.openTask = task.id;
     title.append(open);
-    const description = element(document, 'p', 'task-description', task.description || (isRoadmap ? `Итерация ${task.roadmap_iteration}` : 'Описание не добавлено.'));
+    const description = element(document, 'p', 'task-description', task.description || `Итерация ${task.roadmap_iteration}`);
     const footer = element(document, 'div', 'task-card-footer');
     const meta = element(document, 'span', null, `${(task.comments ?? []).length} комм. · ${(task.events ?? []).length} событий`);
     footer.append(meta);
-    if (isDerived) {
-      footer.append(element(document, 'span', 'task-state', `${(task.audit_links ?? []).length} связей`));
-    } else {
-      const completion = element(document, 'label', 'compact-completion');
-      const checkbox = element(document, 'input');
-      checkbox.type = 'checkbox';
-      checkbox.checked = task.completed;
-      checkbox.disabled = mutationPending || !mutationsAvailable;
-      checkbox.setAttribute('aria-label', completionActionLabel(task));
-      checkbox.dataset.completeTask = task.id;
-      completion.append(checkbox, element(document, 'span', null, 'Готово'));
-      footer.append(completion);
-    }
+    const completion = element(document, 'label', 'compact-completion');
+    const checkbox = element(document, 'input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = task.completed;
+    checkbox.disabled = mutationPending || !mutationsAvailable;
+    checkbox.setAttribute('aria-label', completionActionLabel(task));
+    checkbox.dataset.completeTask = task.id;
+    completion.append(checkbox, element(document, 'span', null, 'Готово'));
+    footer.append(completion);
     card.append(top, title, description, footer);
     return card;
-  }
-
-  function renderTasks() {
-    const auditTasks = board.tasks.filter((task) => task.track === 'audit');
-    const tasks = filterTasks(auditTasks, {
-      priority: nodes.priorityFilter.value,
-      status: nodes.statusFilter.value,
-      search: nodes.search.value,
-    });
-    nodes.taskList.replaceChildren();
-
-    if (!tasks.length) {
-      appendEmpty(document, nodes.taskList, auditTasks.length ? 'По этим фильтрам задач нет.' : 'Нет задач. Добавьте первую.');
-      return;
-    }
-
-    for (const task of tasks) nodes.taskList.append(renderTaskCard(task));
   }
 
   function stageIterationOptions(stage) {
@@ -716,14 +609,10 @@ export function createAuditApp({
   }
 
   function renderBoard() {
-    renderProgress();
-    renderTasks();
     renderRoadmap();
     nodes.boardCommentCount.textContent = String(board.comments.length);
     renderComments(nodes.boardComments, board.comments, 'В общем чате пока тихо.', 'board');
     renderComposer('board');
-    nodes.roadmapBoardCommentCount.textContent = String(board.comments.length);
-    renderComments(nodes.roadmapBoardComments, board.comments, 'В общем чате пока тихо.', 'board');
     renderDrawer();
   }
 
@@ -775,17 +664,6 @@ export function createAuditApp({
     navigation.append(navList);
   }
 
-  function renderReport() {
-    renderReportDocument(reportMarkdown, {
-      titleSelector: '#report-title',
-      introductionSelector: '#report-introduction',
-      navigationSelector: '#report-navigation',
-      disclosuresSelector: '#report-disclosures',
-      fallbackTitle: 'Технический аудит',
-      idPrefix: 'audit-',
-    });
-  }
-
   function renderRoadmapStrategy() {
     renderReportDocument(roadmapMarkdown, {
       titleSelector: '#roadmap-strategy-title',
@@ -802,21 +680,22 @@ export function createAuditApp({
     if (refreshPromise) return refreshPromise;
     refreshPromise = (async () => {
       if (!silent) setStatus('Загрузка общей доски…', 'loading');
-      nodes.taskList.setAttribute('aria-busy', 'true');
       nodes.roadmapTaskList.setAttribute('aria-busy', 'true');
       try {
         const snapshot = await api.snapshot();
         board = {
           board: snapshot?.board ?? null,
           tasks: Array.isArray(snapshot?.tasks)
-            ? snapshot.tasks.map((task) => ({
+            ? snapshot.tasks
+              .filter((task) => task?.track === 'roadmap')
+              .map((task) => ({
               ...task,
-              track: task.track ?? 'audit',
+              track: 'roadmap',
               completion_mode: task.completion_mode ?? 'manual',
               events: Array.isArray(task.events) ? task.events : [],
               comments: Array.isArray(task.comments) ? task.comments : [],
               audit_links: Array.isArray(task.audit_links) ? task.audit_links : [],
-            }))
+              }))
             : [],
           comments: Array.isArray(snapshot?.comments) ? snapshot.comments : [],
         };
@@ -826,9 +705,8 @@ export function createAuditApp({
         }
       } catch (error) {
         if (!silent) setStatus(`Не удалось обновить доску: ${error?.message || 'неизвестная ошибка'}`, 'error');
-        if (!board.tasks.length) appendEmpty(document, nodes.taskList, 'Доска сейчас недоступна. Попробуйте обновить страницу.');
+        if (!board.tasks.length) appendEmpty(document, nodes.roadmapTaskList, 'Доска сейчас недоступна. Попробуйте обновить страницу.');
       } finally {
-        nodes.taskList.setAttribute('aria-busy', 'false');
         nodes.roadmapTaskList.setAttribute('aria-busy', 'false');
         refreshPromise = null;
       }
@@ -1091,16 +969,6 @@ export function createAuditApp({
     openManagedDialog(nodes.drawer, document.querySelector('[data-close-drawer]'));
   }
 
-  function switchWorkspace(workspace) {
-    activeWorkspace = workspace;
-    nodes.auditWorkspace.hidden = workspace !== 'audit';
-    nodes.roadmapWorkspace.hidden = workspace !== 'roadmap';
-    for (const tab of nodes.workspaceTabs) {
-      tab.setAttribute('aria-pressed', String(tab.dataset.workspaceTab === workspace));
-    }
-    nodes.roadmapStatus.textContent = workspace === 'roadmap' ? nodes.status.textContent : '';
-  }
-
   function switchTab(tab) {
     const tablist = tab.closest('[role="tablist"]');
     for (const candidate of tablist.querySelectorAll('[role="tab"]')) {
@@ -1111,15 +979,11 @@ export function createAuditApp({
     }
   }
 
-  function openNewTask(context = { track: 'audit', roadmapStage: null, roadmapIteration: null }) {
+  function openNewTask(context = { track: 'roadmap', roadmapStage: 0, roadmapIteration: 2 }) {
     newTaskContext = context;
     nodes.newTaskNameError.textContent = '';
-    const isRoadmap = context.track === 'roadmap';
     nodes.newTaskDialog.dataset.track = context.track;
-    nodes.newTaskPriorityField.hidden = isRoadmap;
-    nodes.newTaskContext.textContent = isRoadmap
-      ? `Roadmap · этап ${context.roadmapStage} · итерация ${context.roadmapIteration}`
-      : 'Аудит · новая задача';
+    nodes.newTaskContext.textContent = `Roadmap · этап ${context.roadmapStage} · итерация ${context.roadmapIteration}`;
     openManagedDialog(nodes.newTaskDialog, nodes.newTaskName);
   }
 
@@ -1141,14 +1005,9 @@ export function createAuditApp({
     });
     document.querySelector('.brand').addEventListener('click', (event) => {
       event.preventDefault();
-      switchWorkspace('audit');
-      switchTab(nodes.trackerTab);
+      switchTab(nodes.roadmapTrackerTab);
       document.querySelector('#main-content').scrollIntoView?.({ block: 'start' });
     });
-
-    for (const workspaceTab of nodes.workspaceTabs) {
-      workspaceTab.addEventListener('click', () => switchWorkspace(workspaceTab.dataset.workspaceTab));
-    }
 
     for (const tab of document.querySelectorAll('[role="tab"]')) {
       tab.addEventListener('click', () => switchTab(tab));
@@ -1168,26 +1027,10 @@ export function createAuditApp({
       });
     }
 
-    for (const input of [nodes.search, nodes.priorityFilter, nodes.statusFilter]) {
-      input.addEventListener(input === nodes.search ? 'input' : 'change', renderTasks);
-    }
     for (const input of [nodes.roadmapSearch, nodes.roadmapStageFilter, nodes.roadmapStatusFilter]) {
       input.addEventListener(input === nodes.roadmapSearch ? 'input' : 'change', renderRoadmap);
     }
-
-    nodes.taskList.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-open-task]');
-      if (button) showTask(button.dataset.openTask);
-    });
-    nodes.taskList.addEventListener('change', (event) => {
-      if (event.target.matches('[data-complete-task]')) void handleCompletion(event.target);
-    });
     nodes.boardComments.addEventListener('click', (event) => handleCommentAction('board', event));
-    nodes.roadmapBoardComments.addEventListener('click', (event) => {
-      if (!event.target.closest('[data-reply-comment], [data-reaction-comment], [data-jump-comment]')) return;
-      switchWorkspace('audit');
-      handleCommentAction('board', event);
-    });
     nodes.taskComments.addEventListener('click', (event) => handleCommentAction('task', event));
     nodes.boardFileInput.addEventListener('change', () => handleFileSelection('board', nodes.boardFileInput.files));
     nodes.taskFileInput.addEventListener('change', () => handleFileSelection('task', nodes.taskFileInput.files));
@@ -1225,17 +1068,7 @@ export function createAuditApp({
       if (event.target.matches('[data-complete-task]')) void handleCompletion(event.target);
     });
     nodes.drawerCompleted.addEventListener('change', () => void handleCompletion(nodes.drawerCompleted));
-    nodes.taskAuditLinks.addEventListener('click', (event) => {
-      const openAudit = event.target.closest('[data-open-audit-task]');
-      if (!openAudit) return;
-      switchWorkspace('audit');
-      switchTab(nodes.trackerTab);
-      showTask(openAudit.dataset.openAuditTask);
-    });
     document.querySelector('[data-close-drawer]').addEventListener('click', () => closeManagedDialog(nodes.drawer));
-    document.querySelector('#open-new-task').addEventListener('click', () => {
-      openNewTask();
-    });
     for (const close of document.querySelectorAll('[data-close-dialog]')) {
       close.addEventListener('click', () => closeManagedDialog(close.closest('dialog')));
     }
@@ -1266,7 +1099,7 @@ export function createAuditApp({
       event.preventDefault();
       const result = normalizeTaskInput({
         title: nodes.newTaskName.value,
-        priority: nodes.newTaskPriority.value,
+        priority: null,
         ...newTaskContext,
       });
       if (!result.valid) {
@@ -1278,14 +1111,13 @@ export function createAuditApp({
         title: result.value.title,
         description: nodes.newTaskDescription.value.trim(),
         priority: result.value.priority,
-        track: result.value.track ?? 'audit',
+        track: 'roadmap',
         roadmapStage: result.value.roadmapStage ?? null,
         roadmapIteration: result.value.roadmapIteration ?? null,
       }));
       if (saved) {
         nodes.newTaskForm.reset();
-        nodes.newTaskPriority.value = 'P1';
-        newTaskContext = { track: 'audit', roadmapStage: null, roadmapIteration: null };
+        newTaskContext = { track: 'roadmap', roadmapStage: 0, roadmapIteration: 2 };
         closeManagedDialog(nodes.newTaskDialog);
       }
     });
@@ -1293,23 +1125,6 @@ export function createAuditApp({
     nodes.boardCommentForm.addEventListener('submit', (event) => {
       event.preventDefault();
       void submitChatMessage('board');
-    });
-    nodes.roadmapBoardCommentForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const result = normalizeComment(nodes.roadmapBoardComment.value);
-      nodes.roadmapBoardCommentError.textContent = result.valid ? '' : result.error;
-      if (!result.valid) return;
-      const saved = await performMutation((author) => (
-        typeof api.addBoardMessage === 'function'
-          ? api.addBoardMessage({
-              author,
-              body: result.value,
-              parentCommentId: null,
-              attachments: [],
-            })
-          : api.addBoardComment({ author, body: result.value })
-      ));
-      if (saved) nodes.roadmapBoardCommentForm.reset();
     });
     nodes.taskCommentForm.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -1324,12 +1139,6 @@ export function createAuditApp({
       });
     }
 
-    document.querySelector('#expand-report').addEventListener('click', () => {
-      for (const details of document.querySelectorAll('#report-disclosures details')) details.open = true;
-    });
-    document.querySelector('#collapse-report').addEventListener('click', () => {
-      for (const details of document.querySelectorAll('#report-disclosures details')) details.open = false;
-    });
     document.querySelector('#expand-roadmap-strategy').addEventListener('click', () => {
       for (const details of document.querySelectorAll('#roadmap-strategy-disclosures details')) details.open = true;
     });
@@ -1361,7 +1170,6 @@ export function createAuditApp({
     async start() {
       if (started) return;
       started = true;
-      renderReport();
       renderRoadmapStrategy();
       renderBoard();
       bindEvents();
@@ -1375,9 +1183,8 @@ export function createAuditApp({
         nodes.initializationErrorMessage.textContent = initializationError.message;
         setStatus(initializationError.message, initializationError.kind);
         setMutationPending(false);
-        nodes.taskList.setAttribute('aria-busy', 'false');
         nodes.roadmapTaskList.setAttribute('aria-busy', 'false');
-        appendEmpty(document, nodes.taskList, 'Совместная доска недоступна. Полный отчёт можно читать во вкладке «Отчёт».');
+        appendEmpty(document, nodes.roadmapTaskList, 'Совместная roadmap-доска недоступна. Проверьте ссылку и обновите страницу.');
         return;
       }
       nodes.initializationError.hidden = true;
@@ -1434,23 +1241,13 @@ export async function initializeBoardApi({
 }
 
 async function bootstrap() {
-  const reportPromise = fetch(new URL('../audit-report.md', import.meta.url)).then((response) => {
-    if (!response.ok) throw new Error('Не удалось загрузить файл отчёта.');
-    return response.text();
-  });
   const roadmapPromise = fetch(new URL('../roadmap-report.md', import.meta.url)).then((response) => {
     if (!response.ok) throw new Error('Не удалось загрузить файл стратегии.');
     return response.text();
   });
   const initialization = await initializeBoardApi({ hash: window.location.hash });
 
-  let reportMarkdown = '';
   let roadmapMarkdown = '';
-  try {
-    reportMarkdown = await reportPromise;
-  } catch (error) {
-    reportMarkdown = `# Технический аудит\n\n${error.message}`;
-  }
   try {
     roadmapMarkdown = await roadmapPromise;
   } catch (error) {
@@ -1461,11 +1258,10 @@ async function bootstrap() {
     window,
     api: initialization.api,
     initializationError: initialization.error,
-    reportMarkdown,
     roadmapMarkdown,
   }).start();
 }
 
-if (typeof document !== 'undefined' && document.querySelector('#task-list')) {
+if (typeof document !== 'undefined' && document.querySelector('#roadmap-stage-list')) {
   void bootstrap();
 }
