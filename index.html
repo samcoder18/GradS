@@ -4,24 +4,37 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Общая доска задач и полный технический аудит сайта «Сладкий Град»." />
-    <meta name="theme-color" content="#f4f1ea" />
+    <meta name="theme-color" content="#FAFAF9" />
     <title>Трекер технического аудита</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
-    <header class="site-header">
-      <a class="brand" href="./" aria-label="Трекер аудита — главная">
-        <span class="brand-mark" aria-hidden="true">АГ</span>
-        <span>Аудит · Сладкий Град</span>
-      </a>
-      <nav class="view-tabs" aria-label="Primary navigation" role="tablist">
-        <button id="tracker-tab" type="button" role="tab" aria-selected="true" aria-controls="tracker">Доска</button>
-        <button id="report-tab" type="button" role="tab" aria-selected="false" aria-controls="report" tabindex="-1">Отчёт</button>
-      </nav>
-    </header>
+    <div class="app-shell">
+      <aside class="site-sidebar" aria-label="Навигация по рабочей области">
+        <div class="workspace-identity">
+          <a class="brand" href="./" aria-label="Трекер аудита — главная">
+            <span class="brand-mark" aria-hidden="true">АГ</span>
+            <span class="brand-copy"><strong>Сладкий Град</strong><small>Audit workspace</small></span>
+          </a>
+        </div>
+        <nav class="view-tabs" aria-label="Primary navigation · Основная навигация" role="tablist">
+          <button id="tracker-tab" type="button" role="tab" aria-selected="true" aria-controls="tracker"><span aria-hidden="true">⌘</span>Доска</button>
+          <button id="report-tab" type="button" role="tab" aria-selected="false" aria-controls="report" tabindex="-1"><span aria-hidden="true">▤</span>Отчёт</button>
+        </nav>
+        <div class="sidebar-footer"><span class="status-dot" aria-hidden="true"></span><span>Общая доска активна</span></div>
+      </aside>
 
-    <main id="main-content" tabindex="-1">
+      <div class="app-content">
+        <header class="site-header">
+          <div class="topbar-context"><span class="topbar-kicker">Общая доска</span><strong>Аудит · Сладкий Град</strong></div>
+          <div class="topbar-meta"><span>19 августа 2026</span><span class="topbar-status"><span class="status-dot" aria-hidden="true"></span>Синхронизировано</span></div>
+        </header>
+
+        <main id="main-content" tabindex="-1">
       <section id="tracker" class="view-panel" role="tabpanel" aria-labelledby="tracker-tab">
         <div class="hero-row">
           <div>
@@ -105,7 +118,7 @@
           <div id="report-disclosures" class="report-disclosures"><p>Загрузка полного отчёта…</p></div>
         </div>
       </section>
-    </main>
+        </main>
 
     <dialog id="new-task-dialog" aria-labelledby="new-task-title">
       <form id="new-task-form" class="dialog-card">
@@ -163,5 +176,7 @@
 
     <noscript>Для совместной доски требуется JavaScript. Полный отчёт находится в файле audit-report.md.</noscript>
     <script type="module" src="./src/app.js"></script>
+      </div>
+    </div>
   </body>
 </html>

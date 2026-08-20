@@ -20,6 +20,17 @@ function buildEnvironment(outputDirectory, extra = {}) {
 }
 
 describe('deployment build', () => {
+  test('ships the Ember Studio shell and typography hooks', async () => {
+    const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+
+    expect(html).toContain('class="app-shell"');
+    expect(html).toContain('class="site-sidebar"');
+    expect(html).toContain('class="workspace-identity"');
+    expect(html).toContain('class="topbar-context"');
+    expect(html).toMatch(/fonts\.googleapis\.com\/css2\?family=Playfair\+Display/);
+    expect(html).toMatch(/family=Source\+Sans\+3/);
+  });
+
   test('GitHub Pages workflow tests and uploads the generated runtime artifact', async () => {
     const workflow = await readFile(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
     const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
