@@ -31,6 +31,17 @@ describe('deployment build', () => {
     expect(html).toMatch(/family=Source\+Sans\+3/);
   });
 
+  test('uses the Ember Studio token and responsive foundation', async () => {
+    const styles = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
+
+    expect(styles).toContain('--primary: #C2410C');
+    expect(styles).toContain('--surface-raised: #E7E5E4');
+    expect(styles).toContain('font-family: "Playfair Display"');
+    expect(styles).toContain('.site-sidebar');
+    expect(styles).toContain('@media (max-width: 900px)');
+    expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
+  });
+
   test('GitHub Pages workflow tests and uploads the generated runtime artifact', async () => {
     const workflow = await readFile(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
     const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
