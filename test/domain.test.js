@@ -205,4 +205,14 @@ describe('static app foundation', () => {
     expect(document.querySelector('#board-comment-form')).not.toBeNull();
     expect(document.querySelector('#report-disclosures')).not.toBeNull();
   });
+
+  test('keeps the roadmap workspace alongside the rich board composer', async () => {
+    const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+    const document = new JSDOM(html).window.document;
+
+    expect(document.querySelector('[data-workspace-tab="roadmap"]')).not.toBeNull();
+    expect(document.querySelector('#roadmap-workspace')).not.toBeNull();
+    expect(document.querySelector('#board-file-input')).not.toBeNull();
+    expect(document.querySelector('#board-record-toggle')).not.toBeNull();
+  });
 });
