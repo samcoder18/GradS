@@ -20,25 +20,28 @@ function buildEnvironment(outputDirectory, extra = {}) {
 }
 
 describe('deployment build', () => {
-  test('ships the Ember Studio shell and typography hooks', async () => {
+  test('ships a compact tracker shell without the experimental studio chrome', async () => {
     const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 
-    expect(html).toContain('class="app-shell"');
-    expect(html).toContain('class="site-sidebar"');
-    expect(html).toContain('class="workspace-identity"');
-    expect(html).toContain('class="topbar-context"');
-    expect(html).toMatch(/fonts\.googleapis\.com\/css2\?family=Playfair\+Display/);
-    expect(html).toMatch(/family=Source\+Sans\+3/);
+    expect(html).toContain('class="workspace-tabs"');
+    expect(html).toContain('data-workspace-tab="audit"');
+    expect(html).toContain('data-workspace-tab="roadmap"');
+    expect(html).not.toContain('class="app-shell"');
+    expect(html).not.toContain('class="site-sidebar"');
+    expect(html).not.toContain('class="workspace-identity"');
+    expect(html).not.toContain('class="topbar-context"');
+    expect(html).not.toMatch(/fonts\.googleapis\.com/);
   });
 
-  test('uses the Ember Studio token and responsive foundation', async () => {
+  test('uses a warm, readable visual system with a 390 px responsive layout', async () => {
     const styles = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
 
-    expect(styles).toContain('--primary: #C2410C');
-    expect(styles).toContain('--surface-raised: #E7E5E4');
-    expect(styles).toContain('font-family: "Playfair Display"');
-    expect(styles).toContain('.site-sidebar');
-    expect(styles).toContain('@media (max-width: 900px)');
+    expect(styles).toContain('--paper: #f4f1ea');
+    expect(styles).toContain('--accent: #b42333');
+    expect(styles).not.toContain('--sidebar-width');
+    expect(styles).not.toContain('font-family: "Playfair Display"');
+    expect(styles).not.toContain('.site-sidebar');
+    expect(styles).toContain('@media (max-width: 390px)');
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
   });
 
@@ -49,18 +52,23 @@ describe('deployment build', () => {
     expect(styles).toContain('.task-card:hover');
     expect(styles).toContain('.report-navigation a[aria-current="true"]');
     expect(styles).toContain('.dialog-card');
-    expect(styles).toContain('border-radius: 12px');
+    expect(styles).toContain('border-radius: 1.1rem');
   });
 
-  test('ships the chat workspace styling contract', async () => {
+  test('keeps the chat secondary and avoids controls that are not available in production', async () => {
+    const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
     const styles = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
 
-    expect(styles).toContain('.chat-panel.is-fullscreen');
+    expect(html).toMatch(/id="toggle-chat-fullscreen"[^>]*hidden/);
+    expect(html).toMatch(/for="board-file-input"[^>]*hidden/);
+    expect(html).toMatch(/id="board-record-toggle"[^>]*hidden/);
+    expect(html).toMatch(/for="task-file-input"[^>]*hidden/);
+    expect(html).toMatch(/id="task-record-toggle"[^>]*hidden/);
+    expect(styles).toContain('.chat-panel');
     expect(styles).toContain('.comment[data-parent-comment-id]');
     expect(styles).toContain('.reaction-chip.is-active');
     expect(styles).toContain('.chat-composer');
-    expect(styles).toContain('.record-button[data-recording-time]');
-    expect(styles).toContain('.chat-panel.is-fullscreen .chat-composer');
+    expect(styles).not.toContain('.record-button[data-recording-time]');
   });
 
   test('GitHub Pages workflow tests and uploads the generated runtime artifact', async () => {
@@ -85,6 +93,7 @@ describe('deployment build', () => {
     expect(workflow).toMatch(/database-tests:[\s\S]*supabase db start[\s\S]*npm run test:db/);
     expect(workflow).toMatch(/deploy:[\s\S]*needs:\s*\[build, database-tests\]/);
     expect(packageJson.scripts['test:db']).toBe('supabase test db');
+    expect(packageJson.scripts.preview).toBe('vite preview --host 127.0.0.1');
     expect(supabaseConfig).toMatch(/project_id\s*=\s*"audit-tracker"/);
     expect(supabaseConfig).toMatch(/major_version\s*=\s*17/);
     expect(supabaseConfig).toMatch(/\[storage\]\s*\n\s*enabled\s*=\s*true/);

@@ -4,42 +4,29 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Общая доска задач для технического аудита и roadmap сайта «Сладкий Град»." />
-    <meta name="theme-color" content="#FAFAF9" />
+    <meta name="theme-color" content="#f4f1ea" />
     <title>Трекер развития сайта «Сладкий Град»</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
-    <div class="app-shell">
-      <aside class="site-sidebar" aria-label="Навигация по рабочей области">
-        <div class="workspace-identity">
-          <a class="brand" href="./" aria-label="Трекер развития — главная">
-            <span class="brand-mark" aria-hidden="true">АГ</span>
-            <span class="brand-copy"><strong>Сладкий Град</strong><small>Общая доска</small></span>
-          </a>
-        </div>
-        <nav class="workspace-tabs view-tabs" aria-label="Рабочее пространство">
-          <button type="button" data-workspace-tab="audit" aria-pressed="true"><span aria-hidden="true">⌘</span>Аудит</button>
-          <button type="button" data-workspace-tab="roadmap" aria-pressed="false"><span aria-hidden="true">▤</span>Roadmap</button>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Трекер развития — главная">
+        <span class="brand-mark" aria-hidden="true">АГ</span>
+        <span>Сладкий Град</span>
+      </a>
+      <nav class="workspace-tabs" aria-label="Рабочее пространство">
+        <button type="button" data-workspace-tab="audit" aria-pressed="true">Аудит</button>
+        <button type="button" data-workspace-tab="roadmap" aria-pressed="false">Roadmap</button>
+      </nav>
+    </header>
+
+    <main id="main-content" tabindex="-1">
+      <section id="audit-workspace" data-workspace-panel="audit">
+        <nav class="view-tabs" aria-label="Разделы аудита" role="tablist">
+          <button id="tracker-tab" type="button" role="tab" aria-selected="true" aria-controls="tracker">Задачи</button>
+          <button id="report-tab" type="button" role="tab" aria-selected="false" aria-controls="report" tabindex="-1">Отчёт</button>
         </nav>
-        <div class="sidebar-footer"><span class="status-dot" aria-hidden="true"></span><span>Общая доска активна</span></div>
-      </aside>
-
-      <div class="app-content">
-        <header class="site-header">
-          <div class="topbar-context"><span class="topbar-kicker">Общая доска</span><strong>Аудит и Roadmap · Сладкий Град</strong></div>
-          <div class="topbar-meta"><span>19 августа 2026</span><span class="topbar-status"><span class="status-dot" aria-hidden="true"></span>Синхронизировано</span></div>
-        </header>
-
-        <main id="main-content" tabindex="-1">
-          <section id="audit-workspace" data-workspace-panel="audit">
-            <nav class="view-tabs" aria-label="Разделы аудита" role="tablist">
-              <button id="tracker-tab" type="button" role="tab" aria-selected="true" aria-controls="tracker">Задачи</button>
-              <button id="report-tab" type="button" role="tab" aria-selected="false" aria-controls="report" tabindex="-1">Отчёт</button>
-            </nav>
       <section id="tracker" class="view-panel" role="tabpanel" aria-labelledby="tracker-tab">
         <div class="hero-row">
           <div>
@@ -84,7 +71,7 @@
               <div><p class="eyebrow">Для всей команды</p><h2 id="chat-heading">Общий чат</h2></div>
               <div class="chat-heading-actions">
                 <span id="board-comment-count" class="count-badge">0</span>
-                <button id="toggle-chat-fullscreen" class="icon-button" type="button" aria-pressed="false" aria-label="Открыть чат на весь экран" title="Открыть чат на весь экран">⛶</button>
+                <button id="toggle-chat-fullscreen" class="icon-button" type="button" aria-pressed="false" aria-label="Открыть чат на весь экран" title="Открыть чат на весь экран" hidden>⛶</button>
               </div>
             </div>
             <ol id="board-comments" class="comment-list"></ol>
@@ -95,13 +82,13 @@
                 <span id="board-reply-label"></span>
                 <button class="icon-button" type="button" data-cancel-reply="board" aria-label="Отменить ответ">×</button>
               </div>
-              <div id="board-attachment-drafts" class="attachment-drafts" aria-live="polite"></div>
+              <div id="board-attachment-drafts" class="attachment-drafts" aria-live="polite" hidden></div>
               <p id="board-comment-error" class="field-error" role="alert"></p>
               <div class="composer-toolbar">
-                <label class="button button-quiet attachment-button" for="board-file-input">＋ Фото
+                <label class="button button-quiet attachment-button" for="board-file-input" hidden>＋ Фото
                   <input id="board-file-input" type="file" accept="image/*,audio/*" multiple hidden />
                 </label>
-                <button id="board-record-toggle" class="button button-quiet record-button" type="button" aria-pressed="false">◉ Голос</button>
+                <button id="board-record-toggle" class="button button-quiet record-button" type="button" aria-pressed="false" hidden>◉ Голос</button>
                 <button class="button button-secondary" type="submit">Отправить</button>
               </div>
             </form>
@@ -191,9 +178,7 @@
           </div>
         </section>
       </section>
-        </main>
-      </div>
-    </div>
+    </main>
 
     <dialog id="new-task-dialog" aria-labelledby="new-task-title">
       <form id="new-task-form" class="dialog-card">
@@ -239,13 +224,13 @@
               <span id="task-reply-label"></span>
               <button class="icon-button" type="button" data-cancel-reply="task" aria-label="Отменить ответ">×</button>
             </div>
-            <div id="task-attachment-drafts" class="attachment-drafts" aria-live="polite"></div>
+            <div id="task-attachment-drafts" class="attachment-drafts" aria-live="polite" hidden></div>
             <p id="task-comment-error" class="field-error" role="alert"></p>
             <div class="composer-toolbar">
-              <label class="button button-quiet attachment-button" for="task-file-input">＋ Фото
+              <label class="button button-quiet attachment-button" for="task-file-input" hidden>＋ Фото
                 <input id="task-file-input" type="file" accept="image/*,audio/*" multiple hidden />
               </label>
-              <button id="task-record-toggle" class="button button-quiet record-button" type="button" aria-pressed="false">◉ Голос</button>
+              <button id="task-record-toggle" class="button button-quiet record-button" type="button" aria-pressed="false" hidden>◉ Голос</button>
               <button class="button button-secondary" type="submit">Отправить</button>
             </div>
           </form>

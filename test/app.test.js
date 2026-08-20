@@ -122,9 +122,10 @@ describe('audit tracker DOM client', () => {
 
     expect(document.querySelector('#progress-percent').textContent).toBe('50%');
     expect(document.querySelectorAll('.task-card')).toHaveLength(2);
-    expect(document.querySelector('.site-sidebar .view-tabs')).not.toBeNull();
-    expect(document.querySelector('.topbar-context')).not.toBeNull();
-    expect(document.querySelector('.workspace-identity')).not.toBeNull();
+    expect(document.querySelector('.workspace-tabs')).not.toBeNull();
+    expect(document.querySelector('.site-sidebar')).toBeNull();
+    expect(document.querySelector('.topbar-context')).toBeNull();
+    expect(document.querySelector('.workspace-identity')).toBeNull();
     expect(document.querySelector('#task-list img')).toBeNull();
     expect(document.querySelector('#task-list').textContent).toContain('<img src=x onerror=alert(1)>');
 
