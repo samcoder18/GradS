@@ -207,6 +207,20 @@ h3 {
   align-items: end;
 }
 
+.hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.hero-title-row h1 {
+  margin-bottom: 0;
+}
+
+.hero-title-row + .lede {
+  margin-top: 0.7rem;
+}
+
 .initialization-error {
   margin-top: 1rem;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
@@ -1106,6 +1120,15 @@ dialog::backdrop {
   .report-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .hero-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hero-row .lede {
+    display: none;
   }
 
   .hero-row .button {

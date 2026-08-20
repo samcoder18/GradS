@@ -232,6 +232,16 @@ describe('chat input contracts', () => {
 });
 
 describe('static app foundation', () => {
+  test('places the roadmap tabs beside the desktop title and hides the summary on narrow screens', async () => {
+    const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+    const styles = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
+    const document = new JSDOM(html).window.document;
+
+    expect(document.querySelector('.hero-row .view-tabs')).not.toBeNull();
+    expect(document.querySelector('.hero-row .lede')).not.toBeNull();
+    expect(styles).toMatch(/@media \(max-width: 720px\)[\s\S]*?\.hero-row \.lede\s*\{\s*display:\s*none;/);
+  });
+
   test('provides semantic landmarks and announced application status', async () => {
     const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
     const document = new JSDOM(html).window.document;
