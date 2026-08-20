@@ -46,7 +46,30 @@ function snapshot() {
   };
 }
 
-async function setup({ storedName = 'Ada', snapshotValue = snapshot(), apiOverride, reportText = reportMarkdown } = {}) {
+function roadmapSnapshot() {
+  const value = snapshot();
+  value.tasks.push(
+    {
+      id: 'roadmap-0', position: 16, title: 'Собрать реквизиты', description: '', priority: null,
+      track: 'roadmap', roadmap_stage: 0, roadmap_iteration: 2, completion_mode: 'manual', completed: true,
+      created_by: 'Roadmap', created_at: '2026-08-20T08:00:00Z', updated_at: '2026-08-20T08:00:00Z', events: [], comments: [], audit_links: [],
+    },
+    {
+      id: 'roadmap-1', position: 17, title: 'P0: форма офиса перестаёт врать про «заявку принята».', description: '', priority: null,
+      track: 'roadmap', roadmap_stage: 1, roadmap_iteration: 1, completion_mode: 'derived', completed: false,
+      created_by: 'Roadmap', created_at: '2026-08-20T08:00:00Z', updated_at: '2026-08-20T08:00:00Z', events: [], comments: [],
+      audit_links: [{ id: 'task-1', title: 'Office form', priority: 'P0', completed: false }],
+    },
+    {
+      id: 'roadmap-2', position: 18, title: 'Условия для опта', description: '', priority: null,
+      track: 'roadmap', roadmap_stage: 2, roadmap_iteration: 1, completion_mode: 'manual', completed: false,
+      created_by: 'Roadmap', created_at: '2026-08-20T08:00:00Z', updated_at: '2026-08-20T08:00:00Z', events: [], comments: [], audit_links: [],
+    },
+  );
+  return value;
+}
+
+async function setup({ storedName = 'Ada', snapshotValue = snapshot(), apiOverride, reportText = reportMarkdown, roadmapText = '# Source roadmap\n\nRoadmap introduction.\n\n## Этапы\n\nПолный текст стратегии.' } = {}) {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
   const dom = new JSDOM(html, { url: 'https://example.test/#board=abcdefghijklmnopqrstuvwxyz123456' });
   if (storedName) dom.window.localStorage.setItem('audit-tracker-display-name', storedName);
@@ -64,6 +87,7 @@ async function setup({ storedName = 'Ada', snapshotValue = snapshot(), apiOverri
     window: dom.window,
     api,
     reportMarkdown: reportText,
+    roadmapMarkdown: roadmapText,
     setIntervalFn(callback, delay) {
       intervalCallback = callback;
       expect(delay).toBe(20_000);
@@ -115,6 +139,41 @@ describe('audit tracker DOM client', () => {
     expect(document.querySelectorAll('#report-disclosures details')).toHaveLength(1);
     expect(document.querySelector('#report-disclosures').textContent).toContain('Full report body.');
 
+    app.stop();
+  });
+
+  test('renders a separate roadmap workspace with stages, strategy, audit links, and contextual task creation', async () => {
+    const { app, calls, dom } = await setup({ snapshotValue: roadmapSnapshot() });
+    const { document } = dom.window;
+
+    document.querySelector('[data-workspace-tab="roadmap"]').click();
+    expect(document.querySelector('#roadmap-workspace').hidden).toBe(false);
+    expect(document.querySelector('#audit-workspace').hidden).toBe(true);
+    expect(document.querySelector('#roadmap-progress-percent').textContent).toBe('33%');
+    expect(document.querySelectorAll('#roadmap-stage-list .roadmap-stage')).toHaveLength(9);
+    expect(document.querySelector('#roadmap-stage-list').textContent).toContain('Этап 1');
+
+    document.querySelector('#roadmap-board-comment').value = '  Общее обновление  ';
+    document.querySelector('#roadmap-board-comment-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    expect(calls).toContainEqual(['addBoardComment', { author: 'Ada', body: 'Общее обновление' }]);
+
+    document.querySelector('[data-open-task="roadmap-1"]').click();
+    expect(document.querySelector('#drawer-completed').disabled).toBe(true);
+    expect(document.querySelector('#task-audit-links').textContent).toContain('Office form');
+
+    document.querySelector('[data-create-roadmap-task][data-roadmap-stage="0"]').click();
+    document.querySelector('#new-task-name').value = '  Подтвердить реквизиты  ';
+    document.querySelector('#new-task-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    expect(calls).toContainEqual(['createTask', {
+      author: 'Ada', title: 'Подтвердить реквизиты', description: '', priority: null,
+      track: 'roadmap', roadmapStage: 0, roadmapIteration: 2,
+    }]);
+
+    document.querySelector('#roadmap-strategy-tab').click();
+    expect(document.querySelector('#roadmap-strategy').hidden).toBe(false);
+    expect(document.querySelector('#roadmap-strategy-disclosures').textContent).toContain('Полный текст стратегии.');
     app.stop();
   });
 
@@ -444,7 +503,10 @@ describe('audit tracker DOM client', () => {
     document.querySelector('#new-task-description').value = 'Details';
     document.querySelector('#new-task-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
     await settle();
-    expect(calls).toContainEqual(['createTask', { author: 'Ada', title: 'Follow up', description: 'Details', priority: 'P1' }]);
+    expect(calls).toContainEqual(['createTask', {
+      author: 'Ada', title: 'Follow up', description: 'Details', priority: 'P1',
+      track: 'audit', roadmapStage: null, roadmapIteration: null,
+    }]);
 
     document.querySelector('#board-comment').value = '  Team update  ';
     document.querySelector('#board-comment-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));

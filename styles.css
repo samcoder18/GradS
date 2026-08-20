@@ -17,6 +17,9 @@
   --priority-p2: #52796F;
   --priority-p3: #78716C;
   --on-primary: #FAFAF9;
+  --ink: var(--text-primary);
+  --muted: var(--text-secondary);
+  --line: var(--border);
   --sidebar-width: 256px;
   --content-max: 1200px;
   --control-height: 40px;
@@ -302,6 +305,35 @@ textarea:disabled {
   color: var(--text-muted);
   font-size: 12px;
   white-space: nowrap;
+
+[data-workspace-panel] > .view-tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+[data-workspace-panel] > .view-tabs {
+  margin-top: 1.25rem;
+}
+
+[data-workspace-panel] > .view-tabs button {
+  min-height: 2.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0.45rem 1rem;
+  font-weight: 700;
+}
+
+.site-sidebar .workspace-tabs button[aria-pressed="true"],
+[data-workspace-panel] > .view-tabs button[aria-selected="true"] {
+  border-left-color: var(--primary);
+  background: var(--primary);
+  color: white;
 }
 
 main {
@@ -577,6 +609,11 @@ h3 {
   background: var(--priority-p3);
 }
 
+.task-card.roadmap-task::before,
+.task-card.roadmap-task .priority-badge {
+  background: #39735a;
+}
+
 .board-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(20rem, 24rem);
@@ -748,6 +785,84 @@ textarea:hover {
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.55;
+}
+
+.roadmap-iteration-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.roadmap-iteration-card {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--surface-muted);
+  padding: 0.8rem;
+}
+
+.roadmap-iteration-card span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.roadmap-iteration-card span:last-child {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.roadmap-stage-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.roadmap-stage {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.roadmap-stage summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  cursor: pointer;
+  padding: 1rem;
+}
+
+.roadmap-stage summary > span:not(.count-badge) {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.roadmap-stage[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.roadmap-stage-body {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.roadmap-stage-group {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.roadmap-stage-group h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.roadmap-stage-group > .button {
+  justify-self: start;
 }
 
 .compact-completion,
@@ -1103,6 +1218,12 @@ dialog::backdrop {
   margin-bottom: 0;
 }
 
+.dialog-context {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .dialog-actions {
   justify-content: end;
   margin-top: 8px;
@@ -1384,11 +1505,16 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
 
-  .view-tabs {
+  .site-header {
+    min-height: 4rem;
+    flex-wrap: wrap;
+  }
+
+  [data-workspace-panel] > .view-tabs {
     justify-content: stretch;
   }
 
-  .view-tabs button {
+  [data-workspace-panel] > .view-tabs button {
     flex: 1;
     justify-content: center;
   }
@@ -1438,7 +1564,21 @@ dialog::backdrop {
     grid-template-columns: 1fr 1fr;
   }
 
-  .filters .search-field {
+  .roadmap-iteration-progress {
+    grid-template-columns: 1fr;
+  }
+
+  .roadmap-stage summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .roadmap-stage summary .count-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .filters .search-field,
+  .search-field {
     grid-column: 1 / -1;
   }
 

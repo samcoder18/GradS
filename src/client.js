@@ -313,8 +313,17 @@ export function createBoardApi(supabase, token) {
 
   return {
     snapshot: () => call('board_snapshot', { token }),
-    createTask: ({ author, title, description, priority }) =>
-      call('create_task', { token, author, title, description, priority }),
+    createTask: ({ author, title, description, priority, track, roadmapStage, roadmapIteration }) =>
+      call('create_task', {
+        token,
+        author,
+        title,
+        description,
+        priority,
+        track,
+        roadmap_stage: roadmapStage,
+        roadmap_iteration: roadmapIteration,
+      }),
     setCompleted: ({ author, taskId, completed }) =>
       call('set_task_completed', { token, author, task_id: taskId, completed }),
     addTaskComment: ({ author, taskId, body }) =>
