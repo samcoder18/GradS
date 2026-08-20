@@ -815,6 +815,12 @@ textarea:hover {
   overscroll-behavior: contain;
 }
 
+.chat-panel.is-fullscreen .chat-composer {
+  flex: 0 0 auto;
+  background: var(--surface);
+  padding-bottom: 4px;
+}
+
 .comment-list,
 .event-list {
   display: grid;
