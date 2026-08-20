@@ -8,6 +8,13 @@ import {
   parseBoardToken,
 } from '../src/domain.js';
 import * as domain from '../src/domain.js';
+import {
+  ROADMAP_ITERATIONS,
+  ROADMAP_STAGES,
+  filterRoadmapTasks,
+  roadmapProgress,
+  roadmapStageGroups,
+} from '../src/roadmap.js';
 
 describe('filterTasks', () => {
   test('keeps tasks matching the selected priority and completion state', () => {
@@ -108,6 +115,58 @@ describe('normalizeTaskInput', () => {
       errors: { title: 'Use 200 characters or fewer.' },
     });
   });
+
+  test('normalizes roadmap work without a priority and requires its stage context', () => {
+    expect(normalizeTaskInput({
+      title: '  Собрать материалы  ',
+      track: 'roadmap',
+      roadmapStage: 2,
+      roadmapIteration: 3,
+    })).toEqual({
+      valid: true,
+      value: {
+        title: 'Собрать материалы',
+        priority: null,
+        track: 'roadmap',
+        roadmapStage: 2,
+        roadmapIteration: 3,
+      },
+    });
+    expect(normalizeTaskInput({ title: 'Без контекста', track: 'roadmap', roadmapStage: 0, roadmapIteration: 1 }))
+      .toEqual({ valid: false, errors: { roadmap: 'Choose the stage context for this roadmap task.' } });
+  });
+});
+
+describe('roadmap task grouping', () => {
+  const roadmapTasks = [
+    { id: 'stage-0', track: 'roadmap', roadmap_stage: 0, roadmap_iteration: 2, title: 'Реквизиты', completed: true },
+    { id: 'stage-2-fast', track: 'roadmap', roadmap_stage: 2, roadmap_iteration: 1, title: 'Форма', completed: false },
+    { id: 'stage-2-growth', track: 'roadmap', roadmap_stage: 2, roadmap_iteration: 3, title: 'Квиз', completed: false },
+    { id: 'audit', track: 'audit', priority: 'P0', title: 'Аудит', completed: false },
+  ];
+
+  test('filters only roadmap tasks by search, completion, and stage without mixing audit work', () => {
+    expect(filterRoadmapTasks(roadmapTasks, { stage: '2', status: 'open', search: '  ФОРМА ' }))
+      .toEqual([roadmapTasks[1]]);
+  });
+
+  test('reports overall and stable iteration progress for roadmap tasks', () => {
+    expect(roadmapProgress(roadmapTasks)).toEqual({ total: 3, completed: 1, open: 2, percent: 33 });
+    expect(ROADMAP_ITERATIONS.map(({ iteration, title }) => ({ iteration, title }))).toEqual([
+      { iteration: 1, title: 'Быстрые деньги' },
+      { iteration: 2, title: 'Доверие и запуск' },
+      { iteration: 3, title: 'Рост' },
+    ]);
+  });
+
+  test('keeps all nine source stages and separates the three stage-two iteration groups', () => {
+    expect(ROADMAP_STAGES).toHaveLength(9);
+    expect(roadmapStageGroups(roadmapTasks, 2)).toEqual([
+      { iteration: 1, tasks: [roadmapTasks[1]] },
+      { iteration: 2, tasks: [] },
+      { iteration: 3, tasks: [roadmapTasks[2]] },
+    ]);
+  });
 });
 
 describe('parseBoardToken', () => {
@@ -179,7 +238,7 @@ describe('static app foundation', () => {
 
     expect(document.querySelector('header')).not.toBeNull();
     expect(document.querySelector('main')).not.toBeNull();
-    expect(document.querySelector('nav[aria-label="Primary navigation"]')).not.toBeNull();
+    expect(document.querySelector('nav[aria-label="Рабочее пространство"]')).not.toBeNull();
     expect(document.querySelector('[role="status"][aria-live="polite"]')).not.toBeNull();
   });
 
@@ -190,12 +249,19 @@ describe('static app foundation', () => {
     expect(config).not.toMatch(/service[_-]?role/i);
   });
 
-  test('provides accessible tracker, report, form, chat, and task-detail controls', async () => {
+  test('provides accessible audit and roadmap workspaces, source documents, and task controls', async () => {
     const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
     const document = new JSDOM(html).window.document;
 
     expect(document.querySelector('[role="tablist"]')).not.toBeNull();
-    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-workspace-tab]')).toHaveLength(2);
+    expect(document.querySelector('#roadmap-workspace')).not.toBeNull();
+    expect(document.querySelector('#roadmap-tracker')).not.toBeNull();
+    expect(document.querySelector('#roadmap-strategy')).not.toBeNull();
+    expect(document.querySelector('#roadmap-stage-list')).not.toBeNull();
+    expect(document.querySelector('#roadmap-iteration-progress')).not.toBeNull();
+    expect(document.querySelector('#roadmap-search')).not.toBeNull();
+    expect(document.querySelector('#roadmap-status-filter')).not.toBeNull();
     expect(document.querySelector('#task-search')).not.toBeNull();
     expect(document.querySelector('#priority-filter')).not.toBeNull();
     expect(document.querySelector('#status-filter')).not.toBeNull();

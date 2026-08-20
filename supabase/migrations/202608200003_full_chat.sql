@@ -74,6 +74,21 @@ insert into storage.buckets (id, name, public)
 values ('audit-media', 'audit-media', true)
 on conflict (id) do update set public = true;
 
+create or replace function private.is_valid_board_token(candidate text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog
+as $$
+  select candidate ~ '^[A-Za-z0-9_-]{43}$'
+    and exists (
+      select 1
+      from public.boards
+      where token_hash = extensions.digest(convert_to(candidate, 'UTF8'), 'sha256')
+    );
+$$;
+
 drop policy if exists audit_media_public_read on storage.objects;
 drop policy if exists audit_media_capability_upload on storage.objects;
 
@@ -82,7 +97,7 @@ on storage.objects for select
 to anon, authenticated
 using (
   bucket_id = 'audit-media'
-  and (storage.foldername(name))[1] ~ '^[A-Za-z0-9_-]{43}$'
+  and private.is_valid_board_token((storage.foldername(name))[1])
 );
 
 create policy audit_media_capability_upload
@@ -90,7 +105,7 @@ on storage.objects for insert
 to anon, authenticated
 with check (
   bucket_id = 'audit-media'
-  and (storage.foldername(name))[1] ~ '^[A-Za-z0-9_-]{43}$'
+  and private.is_valid_board_token((storage.foldername(name))[1])
 );
 
 create or replace function private.validate_chat_message(
@@ -188,52 +203,89 @@ begin
       where boards.id = selected_board_id
     ),
     'tasks', coalesce((
-      select jsonb_agg(
-        jsonb_build_object(
-          'id', tasks.id,
-          'position', tasks.position,
-          'title', tasks.title,
-          'description', tasks.description,
-          'priority', tasks.priority,
-          'completed', tasks.completed,
-          'created_by', tasks.created_by,
-          'created_at', tasks.created_at,
-          'updated_at', tasks.updated_at,
-          'events', coalesce((
-            select jsonb_agg(
-              jsonb_build_object(
-                'id', task_events.id,
-                'event_type', task_events.event_type,
-                'actor', task_events.actor,
-                'from_completed', task_events.from_completed,
-                'to_completed', task_events.to_completed,
-                'created_at', task_events.created_at
-              ) order by task_events.created_at, task_events.id
-            )
-            from public.task_events
-            where task_events.board_id = selected_board_id
-              and task_events.task_id = tasks.id
-          ), '[]'::jsonb),
-          'comments', coalesce((
-            select jsonb_agg(
-              jsonb_build_object(
-                'id', task_comments.id,
-                'parent_comment_id', task_comments.parent_comment_id,
-                'author', task_comments.author,
-                'body', task_comments.body,
-                'attachments', task_comments.attachments,
-                'reactions', private.comment_reactions(selected_board_id, null, task_comments.id),
-                'created_at', task_comments.created_at
-              ) order by task_comments.created_at, task_comments.id
-            )
-            from public.task_comments
-            where task_comments.board_id = selected_board_id
-              and task_comments.task_id = tasks.id
-          ), '[]'::jsonb)
-        ) order by tasks.position
-      )
-      from public.tasks
-      where tasks.board_id = selected_board_id
+      select jsonb_agg(task_json order by task_sort.track_order, task_sort.roadmap_stage, task_sort.roadmap_iteration, task_sort.position)
+      from (
+        select
+          case when tasks.track = 'audit' then 0 else 1 end as track_order,
+          coalesce(tasks.roadmap_stage, -1) as roadmap_stage,
+          coalesce(tasks.roadmap_iteration, 0) as roadmap_iteration,
+          tasks.position,
+          jsonb_build_object(
+            'id', tasks.id,
+            'position', tasks.position,
+            'title', tasks.title,
+            'description', tasks.description,
+            'priority', tasks.priority,
+            'track', tasks.track,
+            'roadmap_stage', tasks.roadmap_stage,
+            'roadmap_iteration', tasks.roadmap_iteration,
+            'completion_mode', tasks.completion_mode,
+            'completed', case
+              when tasks.completion_mode = 'derived' then coalesce((
+                select bool_and(audit_tasks.completed)
+                from public.task_audit_links
+                join public.tasks as audit_tasks
+                  on audit_tasks.board_id = task_audit_links.board_id
+                 and audit_tasks.id = task_audit_links.audit_task_id
+                where task_audit_links.board_id = selected_board_id
+                  and task_audit_links.roadmap_task_id = tasks.id
+              ), false)
+              else tasks.completed
+            end,
+            'created_by', tasks.created_by,
+            'created_at', tasks.created_at,
+            'updated_at', tasks.updated_at,
+            'audit_links', coalesce((
+              select jsonb_agg(
+                jsonb_build_object(
+                  'id', audit_tasks.id,
+                  'title', audit_tasks.title,
+                  'priority', audit_tasks.priority,
+                  'completed', audit_tasks.completed
+                ) order by audit_tasks.position
+              )
+              from public.task_audit_links
+              join public.tasks as audit_tasks
+                on audit_tasks.board_id = task_audit_links.board_id
+               and audit_tasks.id = task_audit_links.audit_task_id
+              where task_audit_links.board_id = selected_board_id
+                and task_audit_links.roadmap_task_id = tasks.id
+            ), '[]'::jsonb),
+            'events', coalesce((
+              select jsonb_agg(
+                jsonb_build_object(
+                  'id', task_events.id,
+                  'event_type', task_events.event_type,
+                  'actor', task_events.actor,
+                  'from_completed', task_events.from_completed,
+                  'to_completed', task_events.to_completed,
+                  'created_at', task_events.created_at
+                ) order by task_events.created_at, task_events.id
+              )
+              from public.task_events
+              where task_events.board_id = selected_board_id
+                and task_events.task_id = tasks.id
+            ), '[]'::jsonb),
+            'comments', coalesce((
+              select jsonb_agg(
+                jsonb_build_object(
+                  'id', task_comments.id,
+                  'parent_comment_id', task_comments.parent_comment_id,
+                  'author', task_comments.author,
+                  'body', task_comments.body,
+                  'attachments', task_comments.attachments,
+                  'reactions', private.comment_reactions(selected_board_id, null, task_comments.id),
+                  'created_at', task_comments.created_at
+                ) order by task_comments.created_at, task_comments.id
+              )
+              from public.task_comments
+              where task_comments.board_id = selected_board_id
+                and task_comments.task_id = tasks.id
+            ), '[]'::jsonb)
+          ) as task_json
+        from public.tasks
+        where tasks.board_id = selected_board_id
+      ) as task_sort
     ), '[]'::jsonb),
     'comments', coalesce((
       select jsonb_agg(
@@ -275,15 +327,21 @@ declare
   new_comment public.board_comments%rowtype;
 begin
   perform private.validate_chat_message(normalized_author, normalized_body, normalized_attachments);
-  if parent_comment_id is not null and not exists (
+  if add_board_message.parent_comment_id is not null and not exists (
     select 1 from public.board_comments
-    where board_id = selected_board_id and id = parent_comment_id
+    where board_id = selected_board_id and id = add_board_message.parent_comment_id
   ) then
     raise exception using errcode = 'P0002', message = 'parent message not found';
   end if;
 
   insert into public.board_comments (board_id, parent_comment_id, author, body, attachments)
-  values (selected_board_id, parent_comment_id, normalized_author, normalized_body, normalized_attachments)
+  values (
+    selected_board_id,
+    add_board_message.parent_comment_id,
+    normalized_author,
+    normalized_body,
+    normalized_attachments
+  )
   returning * into new_comment;
 
   return jsonb_build_object(
@@ -325,15 +383,24 @@ begin
   ) then
     raise exception using errcode = 'P0002', message = 'task not found';
   end if;
-  if parent_comment_id is not null and not exists (
-    select 1 from public.task_comments
-    where board_id = selected_board_id and task_id = add_task_message.task_id and id = parent_comment_id
+  if add_task_message.parent_comment_id is not null and not exists (
+    select 1 from public.task_comments as comments
+    where comments.board_id = selected_board_id
+      and comments.task_id = add_task_message.task_id
+      and comments.id = add_task_message.parent_comment_id
   ) then
     raise exception using errcode = 'P0002', message = 'parent message not found';
   end if;
 
   insert into public.task_comments (board_id, task_id, parent_comment_id, author, body, attachments)
-  values (selected_board_id, add_task_message.task_id, parent_comment_id, normalized_author, normalized_body, normalized_attachments)
+  values (
+    selected_board_id,
+    add_task_message.task_id,
+    add_task_message.parent_comment_id,
+    normalized_author,
+    normalized_body,
+    normalized_attachments
+  )
   returning * into new_comment;
 
   return jsonb_build_object(
@@ -373,38 +440,49 @@ begin
   if normalized_emoji not in ('👍', '❤️', '🎉', '👀') then
     raise exception using errcode = '22023', message = 'unsupported reaction';
   end if;
-  if exists (select 1 from public.task_comments where board_id = selected_board_id and id = comment_id) then
-    delete from public.comment_reactions
-    where board_id = selected_board_id
-      and task_comment_id = comment_id
-      and author = normalized_author
-      and emoji = normalized_emoji;
+  if exists (
+    select 1 from public.task_comments
+    where board_id = selected_board_id and id = toggle_comment_reaction.comment_id
+  ) then
+    delete from public.comment_reactions as reactions
+    where reactions.board_id = selected_board_id
+      and reactions.task_comment_id = toggle_comment_reaction.comment_id
+      and reactions.author = normalized_author
+      and reactions.emoji = normalized_emoji;
     removed := found;
     if not removed then
       insert into public.comment_reactions (board_id, task_comment_id, author, emoji)
-      values (selected_board_id, comment_id, normalized_author, normalized_emoji);
+      values (selected_board_id, toggle_comment_reaction.comment_id, normalized_author, normalized_emoji);
     end if;
-  elsif exists (select 1 from public.board_comments where board_id = selected_board_id and id = comment_id) then
-    delete from public.comment_reactions
-    where board_id = selected_board_id
-      and board_comment_id = comment_id
-      and author = normalized_author
-      and emoji = normalized_emoji;
+  elsif exists (
+    select 1 from public.board_comments
+    where board_id = selected_board_id and id = toggle_comment_reaction.comment_id
+  ) then
+    delete from public.comment_reactions as reactions
+    where reactions.board_id = selected_board_id
+      and reactions.board_comment_id = toggle_comment_reaction.comment_id
+      and reactions.author = normalized_author
+      and reactions.emoji = normalized_emoji;
     removed := found;
     if not removed then
       insert into public.comment_reactions (board_id, board_comment_id, author, emoji)
-      values (selected_board_id, comment_id, normalized_author, normalized_emoji);
+      values (selected_board_id, toggle_comment_reaction.comment_id, normalized_author, normalized_emoji);
     end if;
   else
     raise exception using errcode = 'P0002', message = 'message not found';
   end if;
 
-  return jsonb_build_object('comment_id', comment_id, 'emoji', normalized_emoji, 'reacted', not removed);
+  return jsonb_build_object(
+    'comment_id', toggle_comment_reaction.comment_id,
+    'emoji', normalized_emoji,
+    'reacted', not removed
+  );
 end;
 $$;
 
 revoke all on function private.validate_chat_message(text, text, jsonb) from public, anon, authenticated;
 revoke all on function private.comment_reactions(uuid, uuid, uuid) from public, anon, authenticated;
+revoke all on function private.is_valid_board_token(text) from public, anon, authenticated;
 revoke all on function public.add_board_message(text, text, text, uuid, jsonb) from public, anon, authenticated;
 revoke all on function public.add_task_message(text, text, uuid, text, uuid, jsonb) from public, anon, authenticated;
 revoke all on function public.toggle_comment_reaction(text, text, uuid, text) from public, anon, authenticated;
@@ -412,3 +490,4 @@ revoke all on function public.toggle_comment_reaction(text, text, uuid, text) fr
 grant execute on function public.add_board_message(text, text, text, uuid, jsonb) to anon, authenticated;
 grant execute on function public.add_task_message(text, text, uuid, text, uuid, jsonb) to anon, authenticated;
 grant execute on function public.toggle_comment_reaction(text, text, uuid, text) to anon, authenticated;
+grant execute on function private.is_valid_board_token(text) to anon, authenticated;

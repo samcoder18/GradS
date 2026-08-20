@@ -85,11 +85,18 @@ const BOARD_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 /**
  * Converts the new-task form values to the board's small public contract.
- * @param {{title?: unknown, priority?: unknown}} input
+ * @param {{title?: unknown, priority?: unknown, track?: unknown, roadmapStage?: unknown, roadmapIteration?: unknown}} input
  */
-export function normalizeTaskInput({ title, priority = 'P1' } = {}) {
+export function normalizeTaskInput({
+  title,
+  priority = 'P1',
+  track = 'audit',
+  roadmapStage = null,
+  roadmapIteration = null,
+} = {}) {
   const normalizedTitle = String(title ?? '').trim().replace(/\s+/g, ' ');
   const normalizedPriority = String(priority).trim().toUpperCase();
+  const normalizedTrack = String(track ?? '').trim().toLocaleLowerCase();
   const errors = {};
 
   if (!normalizedTitle) {
@@ -98,7 +105,22 @@ export function normalizeTaskInput({ title, priority = 'P1' } = {}) {
     errors.title = 'Use 200 characters or fewer.';
   }
 
-  if (!PRIORITIES.has(normalizedPriority)) {
+  if (normalizedTrack === 'roadmap') {
+    const stage = Number(roadmapStage);
+    const iteration = Number(roadmapIteration);
+    const validIteration = (
+      (stage === 0 && iteration === 2)
+      || (stage === 1 && iteration === 1)
+      || (stage === 2 && iteration >= 1 && iteration <= 3)
+      || ([3, 4, 5, 6, 7].includes(stage) && iteration === 2)
+      || (stage === 8 && iteration === 3)
+    );
+    if (!Number.isInteger(stage) || !Number.isInteger(iteration) || !validIteration) {
+      errors.roadmap = 'Choose the stage context for this roadmap task.';
+    }
+  } else if (normalizedTrack !== 'audit') {
+    errors.track = 'Choose the audit or roadmap workspace.';
+  } else if (!PRIORITIES.has(normalizedPriority)) {
     errors.priority = 'Choose P0, P1, P2, or P3.';
   }
 
@@ -106,10 +128,20 @@ export function normalizeTaskInput({ title, priority = 'P1' } = {}) {
     return { valid: false, errors };
   }
 
-  return {
-    valid: true,
-    value: { title: normalizedTitle, priority: normalizedPriority },
-  };
+  if (normalizedTrack === 'roadmap') {
+    return {
+      valid: true,
+      value: {
+        title: normalizedTitle,
+        priority: null,
+        track: 'roadmap',
+        roadmapStage: Number(roadmapStage),
+        roadmapIteration: Number(roadmapIteration),
+      },
+    };
+  }
+
+  return { valid: true, value: { title: normalizedTitle, priority: normalizedPriority } };
 }
 
 /**

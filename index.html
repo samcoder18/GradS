@@ -3,25 +3,30 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Общая доска задач и полный технический аудит сайта «Сладкий Град»." />
+    <meta name="description" content="Общая доска задач для технического аудита и roadmap сайта «Сладкий Град»." />
     <meta name="theme-color" content="#f4f1ea" />
-    <title>Трекер технического аудита</title>
+    <title>Трекер развития сайта «Сладкий Град»</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
     <header class="site-header">
-      <a class="brand" href="./" aria-label="Трекер аудита — главная">
+      <a class="brand" href="./" aria-label="Трекер развития — главная">
         <span class="brand-mark" aria-hidden="true">АГ</span>
-        <span>Аудит · Сладкий Град</span>
+        <span>Сладкий Град</span>
       </a>
-      <nav class="view-tabs" aria-label="Primary navigation" role="tablist">
-        <button id="tracker-tab" type="button" role="tab" aria-selected="true" aria-controls="tracker">Доска</button>
-        <button id="report-tab" type="button" role="tab" aria-selected="false" aria-controls="report" tabindex="-1">Отчёт</button>
+      <nav class="workspace-tabs" aria-label="Рабочее пространство">
+        <button type="button" data-workspace-tab="audit" aria-pressed="true">Аудит</button>
+        <button type="button" data-workspace-tab="roadmap" aria-pressed="false">Roadmap</button>
       </nav>
     </header>
 
     <main id="main-content" tabindex="-1">
+      <section id="audit-workspace" data-workspace-panel="audit">
+        <nav class="view-tabs" aria-label="Разделы аудита" role="tablist">
+          <button id="tracker-tab" type="button" role="tab" aria-selected="true" aria-controls="tracker">Задачи</button>
+          <button id="report-tab" type="button" role="tab" aria-selected="false" aria-controls="report" tabindex="-1">Отчёт</button>
+        </nav>
       <section id="tracker" class="view-panel" role="tabpanel" aria-labelledby="tracker-tab">
         <div class="hero-row">
           <div>
@@ -105,18 +110,88 @@
           <div id="report-disclosures" class="report-disclosures"><p>Загрузка полного отчёта…</p></div>
         </div>
       </section>
+      </section>
+
+      <section id="roadmap-workspace" data-workspace-panel="roadmap" hidden>
+        <nav class="view-tabs" aria-label="Разделы roadmap" role="tablist">
+          <button id="roadmap-tracker-tab" type="button" role="tab" aria-selected="true" aria-controls="roadmap-tracker">Задачи</button>
+          <button id="roadmap-strategy-tab" type="button" role="tab" aria-selected="false" aria-controls="roadmap-strategy" tabindex="-1">Стратегия</button>
+        </nav>
+        <section id="roadmap-tracker" class="view-panel" role="tabpanel" aria-labelledby="roadmap-tracker-tab">
+          <div class="hero-row">
+            <div>
+              <p class="eyebrow">Совместный план развития</p>
+              <h1>Roadmap</h1>
+              <p class="lede">56 пунктов стратегии: этапы, итерации, связи с аудитом и обсуждения.</p>
+            </div>
+          </div>
+          <p id="roadmap-status" class="status" role="status" aria-live="polite"></p>
+
+          <section class="progress-panel roadmap-progress-panel" aria-labelledby="roadmap-progress-heading">
+            <div class="overall-progress">
+              <div>
+                <p class="eyebrow">Общий прогресс roadmap</p>
+                <h2 id="roadmap-progress-heading"><span id="roadmap-completed-count">0</span> из <span id="roadmap-total-count">0</span> выполнено</h2>
+              </div>
+              <strong id="roadmap-progress-percent" class="progress-percent">0%</strong>
+            </div>
+            <div class="progress-track" role="progressbar" aria-label="Общий прогресс roadmap" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <span id="roadmap-progress-fill"></span>
+            </div>
+            <div id="roadmap-iteration-progress" class="roadmap-iteration-progress" aria-label="Прогресс по итерациям"></div>
+          </section>
+
+          <section class="board-layout" aria-label="Задачи roadmap и общий чат">
+            <div class="task-column">
+              <div class="filters roadmap-filters" aria-label="Фильтры roadmap-задач">
+                <label class="search-field" for="roadmap-search"><span>Поиск</span><input id="roadmap-search" type="search" autocomplete="off" placeholder="Название или описание" /></label>
+                <label for="roadmap-stage-filter"><span>Этап</span><select id="roadmap-stage-filter"><option value="all">Все этапы</option><option value="0">Этап 0</option><option value="1">Этап 1</option><option value="2">Этап 2</option><option value="3">Этап 3</option><option value="4">Этап 4</option><option value="5">Этап 5</option><option value="6">Этап 6</option><option value="7">Этап 7</option><option value="8">Этап 8</option></select></label>
+                <label for="roadmap-status-filter"><span>Статус</span><select id="roadmap-status-filter"><option value="all">Все</option><option value="open">Открытые</option><option value="completed">Выполненные</option></select></label>
+              </div>
+              <div id="roadmap-stage-list" class="roadmap-stage-list" aria-busy="true"></div>
+            </div>
+            <aside class="chat-panel" aria-labelledby="roadmap-chat-heading">
+              <div class="panel-heading"><div><p class="eyebrow">Для всей команды</p><h2 id="roadmap-chat-heading">Общий чат</h2></div><span id="roadmap-board-comment-count" class="count-badge">0</span></div>
+              <ol id="roadmap-board-comments" class="comment-list"></ol>
+              <form id="roadmap-board-comment-form" class="comment-form">
+                <label for="roadmap-board-comment">Новое сообщение</label>
+                <textarea id="roadmap-board-comment" name="body" rows="3" maxlength="4000" required placeholder="Напишите сообщение…"></textarea>
+                <p id="roadmap-board-comment-error" class="field-error" role="alert"></p>
+                <button class="button button-secondary" type="submit">Отправить</button>
+              </form>
+            </aside>
+          </section>
+        </section>
+
+        <section id="roadmap-strategy" class="view-panel report-view" role="tabpanel" aria-labelledby="roadmap-strategy-tab" hidden>
+          <div class="report-header">
+            <div><p class="eyebrow">Исходный документ · 20.08.2026</p><h1 id="roadmap-strategy-title">Стратегия развития сайта «Сладкий Град»</h1></div>
+            <div class="report-actions" aria-label="Управление разделами стратегии">
+              <button id="expand-roadmap-strategy" class="button button-secondary" type="button">Развернуть все</button>
+              <button id="collapse-roadmap-strategy" class="button button-quiet" type="button">Свернуть все</button>
+            </div>
+          </div>
+          <div id="roadmap-strategy-introduction" class="report-introduction"></div>
+          <div class="report-layout">
+            <nav id="roadmap-strategy-navigation" class="report-navigation" aria-label="Разделы стратегии"></nav>
+            <div id="roadmap-strategy-disclosures" class="report-disclosures"><p>Загрузка полной стратегии…</p></div>
+          </div>
+        </section>
+      </section>
     </main>
 
     <dialog id="new-task-dialog" aria-labelledby="new-task-title">
       <form id="new-task-form" class="dialog-card">
         <div class="dialog-heading"><div><p class="eyebrow">Новая работа</p><h2 id="new-task-title">Добавить задачу</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="Закрыть">×</button></div>
+        <p id="new-task-context" class="dialog-context"></p>
         <label for="new-task-name">Название</label>
         <input id="new-task-name" name="title" maxlength="200" required autocomplete="off" />
         <p id="new-task-name-error" class="field-error" role="alert"></p>
         <label for="new-task-description">Описание</label>
         <textarea id="new-task-description" name="description" rows="4" maxlength="4000"></textarea>
-        <label for="new-task-priority">Приоритет</label>
-        <select id="new-task-priority" name="priority"><option value="P0">P0 — немедленно</option><option value="P1" selected>P1 — первая итерация</option><option value="P2">P2 — вторая итерация</option><option value="P3">P3 — гигиена</option></select>
+        <div id="new-task-priority-field"><label for="new-task-priority">Приоритет</label>
+          <select id="new-task-priority" name="priority"><option value="P0">P0 — немедленно</option><option value="P1" selected>P1 — первая итерация</option><option value="P2">P2 — вторая итерация</option><option value="P3">P3 — гигиена</option></select>
+        </div>
         <div class="dialog-actions"><button class="button button-quiet" type="button" data-close-dialog>Отмена</button><button class="button button-primary" type="submit">Добавить задачу</button></div>
       </form>
     </dialog>
@@ -137,6 +212,8 @@
         <div class="dialog-heading"><div><p id="drawer-priority" class="eyebrow"></p><h2 id="drawer-title">Задача</h2></div><button class="icon-button" type="button" data-close-drawer aria-label="Закрыть задачу">×</button></div>
         <p id="drawer-description" class="drawer-description"></p>
         <label class="completion-control" for="drawer-completed"><input id="drawer-completed" type="checkbox" /><span>Задача выполнена</span></label>
+        <p id="drawer-completion-note" class="drawer-description" hidden></p>
+        <section id="task-audit-links-section" aria-labelledby="task-audit-links-heading" hidden><h3 id="task-audit-links-heading">Связанные задачи аудита</h3><ol id="task-audit-links" class="event-list"></ol></section>
         <section aria-labelledby="task-events-heading"><h3 id="task-events-heading">История</h3><ol id="task-events" class="event-list"></ol></section>
         <section aria-labelledby="task-comments-heading">
           <div class="panel-heading"><h3 id="task-comments-heading">Комментарии</h3><span id="task-comment-count" class="count-badge">0</span></div>
@@ -161,7 +238,7 @@
       </div>
     </dialog>
 
-    <noscript>Для совместной доски требуется JavaScript. Полный отчёт находится в файле audit-report.md.</noscript>
+    <noscript>Для совместной доски требуется JavaScript. Исходные документы находятся в audit-report.md и roadmap-report.md.</noscript>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>

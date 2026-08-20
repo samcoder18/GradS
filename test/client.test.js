@@ -37,7 +37,7 @@ describe('parseAuditReport', () => {
 });
 
 describe('createBoardApi', () => {
-  test('uses only the five published RPCs with their exact snake_case arguments', async () => {
+  test('uses only the five published RPCs with the audit and roadmap task arguments', async () => {
     const calls = [];
     const supabase = {
       async rpc(name, args) {
@@ -48,14 +48,38 @@ describe('createBoardApi', () => {
     const api = client.createBoardApi(supabase, 'opaque-token');
 
     await api.snapshot();
-    await api.createTask({ author: 'Ada', title: 'Task', description: 'Details', priority: 'P1' });
+    await api.createTask({
+      author: 'Ada',
+      title: 'Task',
+      description: 'Details',
+      priority: 'P1',
+      track: 'audit',
+      roadmapStage: null,
+      roadmapIteration: null,
+    });
+    await api.createTask({
+      author: 'Ada',
+      title: 'Roadmap task',
+      description: '',
+      priority: null,
+      track: 'roadmap',
+      roadmapStage: 2,
+      roadmapIteration: 3,
+    });
     await api.setCompleted({ author: 'Ada', taskId: 'task-1', completed: true });
     await api.addTaskComment({ author: 'Ada', taskId: 'task-1', body: 'Done.' });
     await api.addBoardComment({ author: 'Ada', body: 'Board note.' });
 
     expect(calls).toEqual([
       ['board_snapshot', { token: 'opaque-token' }],
-      ['create_task', { token: 'opaque-token', author: 'Ada', title: 'Task', description: 'Details', priority: 'P1' }],
+      ['create_task', {
+        token: 'opaque-token', author: 'Ada', title: 'Task', description: 'Details', priority: 'P1',
+        track: 'audit', roadmap_stage: null, roadmap_iteration: null,
+      }],
+      ['create_task', {
+        token: 'opaque-token', author: 'Ada', title: 'Roadmap task', description: '', priority: null,
+        track: 'roadmap', roadmap_stage: 2, roadmap_iteration: 3,
+      }],
       ['set_task_completed', { token: 'opaque-token', author: 'Ada', task_id: 'task-1', completed: true }],
       ['add_task_comment', { token: 'opaque-token', author: 'Ada', task_id: 'task-1', body: 'Done.' }],
       ['add_board_comment', { token: 'opaque-token', author: 'Ada', body: 'Board note.' }],
