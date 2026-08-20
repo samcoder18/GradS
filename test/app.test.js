@@ -195,10 +195,12 @@ describe('audit tracker DOM client', () => {
     expect(document.activeElement).toBe(document.querySelector('#main-content'));
 
     document.querySelector('#report-tab').click();
-    document.querySelector('#report-navigation a').click();
+    const reportLink = document.querySelector('#report-navigation a');
+    reportLink.click();
     await settle();
 
     expect(dom.window.location.hash).toBe(originalHash);
+    expect(reportLink.getAttribute('aria-current')).toBe('true');
     expect(document.querySelector('#report-disclosures details').open).toBe(true);
 
     const brandEvent = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });

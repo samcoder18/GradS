@@ -591,6 +591,8 @@ export function createAuditApp({
       link.href = `#${section.id}`;
       link.addEventListener('click', (event) => {
         event.preventDefault();
+        for (const candidate of navigation.querySelectorAll('a')) candidate.removeAttribute('aria-current');
+        link.setAttribute('aria-current', 'true');
         const target = document.querySelector(`#${section.id}`);
         target?.setAttribute('open', '');
         target?.querySelector('summary')?.focus({ preventScroll: true });

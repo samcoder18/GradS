@@ -42,6 +42,16 @@ describe('deployment build', () => {
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
   });
 
+  test('ships the board and report component styling contract', async () => {
+    const styles = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
+
+    expect(styles).toContain('.task-card::before');
+    expect(styles).toContain('.task-card:hover');
+    expect(styles).toContain('.report-navigation a[aria-current="true"]');
+    expect(styles).toContain('.dialog-card');
+    expect(styles).toContain('border-radius: 12px');
+  });
+
   test('GitHub Pages workflow tests and uploads the generated runtime artifact', async () => {
     const workflow = await readFile(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
     const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
