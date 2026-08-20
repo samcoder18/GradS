@@ -27,7 +27,7 @@ jobs:
           github-token: ${{ github.token }}
       - name: Start ephemeral database
         run: supabase db start
-      - name: Run 85 pgTAP database tests
+      - name: Run 86 pgTAP database tests
         run: npm run test:db
 
   build:
