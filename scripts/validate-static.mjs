@@ -3,6 +3,8 @@ import { access, readFile } from 'node:fs/promises';
 const requiredFiles = [
   'index.html',
   'styles.css',
+  'assets/sweet-city-logo.png',
+  'assets/sweet-city-mark.png',
   'roadmap-report.md',
   'src/app.js',
   'src/client.js',

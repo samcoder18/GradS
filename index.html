@@ -6,15 +6,19 @@
     <meta name="description" content="Общая roadmap-доска задач для сайта «Сладкий Град»." />
     <meta name="theme-color" content="#f4f1ea" />
     <title>Roadmap сайта «Сладкий Град»</title>
+    <link rel="icon" href="./assets/sweet-city-mark.png" type="image/png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
     <header class="site-header">
-      <a class="brand" href="./" aria-label="Roadmap сайта «Сладкий Град» — главная">
-        <span class="brand-mark" aria-hidden="true">АГ</span>
-        <span>Сладкий Град · Roadmap</span>
+      <a class="brand" href="./" aria-label="Сладкий Град — задачи roadmap">
+        <img class="brand-logo" src="./assets/sweet-city-logo.png" alt="Сладкий Град" />
       </a>
+      <nav class="view-tabs" aria-label="Разделы roadmap" role="tablist">
+        <button id="roadmap-tracker-tab" type="button" role="tab" aria-selected="true" aria-controls="roadmap-tracker">Задачи</button>
+        <button id="roadmap-strategy-tab" type="button" role="tab" aria-selected="false" aria-controls="roadmap-strategy" tabindex="-1">Стратегия</button>
+      </nav>
     </header>
 
     <main id="main-content" tabindex="-1">
@@ -23,13 +27,7 @@
           <div class="hero-row">
             <div>
               <p class="eyebrow">Совместный план развития</p>
-              <div class="hero-title-row">
-                <h1>Roadmap</h1>
-                <nav class="view-tabs" aria-label="Разделы roadmap" role="tablist">
-                  <button id="roadmap-tracker-tab" type="button" role="tab" aria-selected="true" aria-controls="roadmap-tracker">Задачи</button>
-                  <button id="roadmap-strategy-tab" type="button" role="tab" aria-selected="false" aria-controls="roadmap-strategy" tabindex="-1">Стратегия</button>
-                </nav>
-              </div>
+              <h1>Roadmap</h1>
               <p class="lede">56 пунктов стратегии: этапы, итерации и обсуждения в одной доске.</p>
             </div>
           </div>

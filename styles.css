@@ -80,32 +80,30 @@ summary:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 4rem;
+  min-height: 5rem;
   border-bottom: 1px solid rgb(125 112 96 / 24%);
   background: rgb(244 241 234 / 92%);
   padding: 0.75rem max(1rem, calc((100vw - 1240px) / 2));
   backdrop-filter: blur(16px);
 }
 
+.site-header > .view-tabs {
+  flex: 0 0 auto;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.7rem;
   color: var(--ink);
-  font-weight: 750;
   text-decoration: none;
 }
 
-.brand-mark {
-  display: grid;
-  width: 2.25rem;
-  height: 2.25rem;
-  place-items: center;
-  border-radius: 0.7rem;
-  background: var(--accent);
-  color: white;
-  font-size: 0.76rem;
-  letter-spacing: 0.08em;
+.brand-logo {
+  display: block;
+  width: 4.25rem;
+  height: 3.75rem;
+  object-fit: contain;
+  mix-blend-mode: multiply;
 }
 
 .view-tabs {
@@ -205,20 +203,6 @@ h3 {
 
 .hero-row {
   align-items: end;
-}
-
-.hero-title-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.hero-title-row h1 {
-  margin-bottom: 0;
-}
-
-.hero-title-row + .lede {
-  margin-top: 0.7rem;
 }
 
 .initialization-error {
@@ -947,6 +931,39 @@ dialog::backdrop {
   margin-bottom: 1.5rem;
 }
 
+@keyframes strategy-section-open {
+  from {
+    opacity: 0;
+    transform: translateY(-0.4rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes strategy-section-close {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-0.3rem);
+  }
+}
+
+.report-section.is-opening {
+  animation: strategy-section-open 200ms ease-out both;
+}
+
+.report-section.is-closing {
+  animation: strategy-section-close 160ms ease-in both;
+  pointer-events: none;
+}
+
 .report-actions {
   display: flex;
   gap: 0.5rem;
@@ -1105,11 +1122,8 @@ dialog::backdrop {
 @media (max-width: 720px) {
   .site-header {
     min-height: 4rem;
-    flex-wrap: wrap;
-  }
-
-  .brand > span:last-child {
-    display: none;
+    gap: 0.5rem;
+    padding-inline: 0.5rem;
   }
 
   main {
@@ -1119,11 +1133,6 @@ dialog::backdrop {
   .hero-row,
   .report-header {
     align-items: stretch;
-    flex-direction: column;
-  }
-
-  .hero-title-row {
-    align-items: flex-start;
     flex-direction: column;
   }
 
@@ -1185,12 +1194,11 @@ dialog::backdrop {
 @media (max-width: 390px) {
   .site-header {
     gap: 0.55rem;
-    padding-inline: 0.5rem;
   }
 
-  .brand-mark {
-    width: 2rem;
-    height: 2rem;
+  .brand-logo {
+    width: 3.25rem;
+    height: 3rem;
   }
 
   .view-tabs button {

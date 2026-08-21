@@ -238,6 +238,7 @@ export function createAuditApp({
   let refreshPromise = null;
   let mutationPending = false;
   let chatFullscreen = false;
+  let strategyTransitionVersion = 0;
   const composers = {
     board: { drafts: [], replyTo: null, recorder: null, recordingStartedAt: 0, recordingTimer: null, recordingStream: null },
     task: { drafts: [], replyTo: null, recorder: null, recordingStartedAt: 0, recordingTimer: null, recordingStream: null },
@@ -979,6 +980,40 @@ export function createAuditApp({
     }
   }
 
+  function setStrategyDisclosureState(expanded) {
+    const transitionVersion = ++strategyTransitionVersion;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const duration = expanded ? 200 : 160;
+    const sections = document.querySelectorAll('#roadmap-strategy-disclosures details');
+
+    for (const section of sections) {
+      if (expanded) {
+        section.classList.remove('is-closing');
+        if (section.open) continue;
+        section.open = true;
+        if (reduceMotion) continue;
+        section.classList.add('is-opening');
+        window.setTimeout(() => {
+          if (strategyTransitionVersion === transitionVersion) section.classList.remove('is-opening');
+        }, duration);
+        continue;
+      }
+
+      if (!section.open) continue;
+      section.classList.remove('is-opening');
+      if (reduceMotion) {
+        section.open = false;
+        continue;
+      }
+      section.classList.add('is-closing');
+      window.setTimeout(() => {
+        if (strategyTransitionVersion !== transitionVersion) return;
+        section.open = false;
+        section.classList.remove('is-closing');
+      }, duration);
+    }
+  }
+
   function openNewTask(context = { track: 'roadmap', roadmapStage: 0, roadmapIteration: 2 }) {
     newTaskContext = context;
     nodes.newTaskNameError.textContent = '';
@@ -1140,10 +1175,10 @@ export function createAuditApp({
     }
 
     document.querySelector('#expand-roadmap-strategy').addEventListener('click', () => {
-      for (const details of document.querySelectorAll('#roadmap-strategy-disclosures details')) details.open = true;
+      setStrategyDisclosureState(true);
     });
     document.querySelector('#collapse-roadmap-strategy').addEventListener('click', () => {
-      for (const details of document.querySelectorAll('#roadmap-strategy-disclosures details')) details.open = false;
+      setStrategyDisclosureState(false);
     });
   }
 

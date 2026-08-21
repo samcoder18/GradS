@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 const runtimeFiles = [
   'index.html',
   'styles.css',
+  'assets/sweet-city-logo.png',
+  'assets/sweet-city-mark.png',
   'roadmap-report.md',
   'src/app.js',
   'src/client.js',

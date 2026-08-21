@@ -117,7 +117,8 @@ describe('deployment build', () => {
       const html = await readFile(join(outputDirectory, 'index.html'), 'utf8');
       const client = await readFile(join(outputDirectory, 'src/client.js'), 'utf8');
 
-      expect(rootFiles.sort()).toEqual(['index.html', 'roadmap-report.md', 'src', 'styles.css']);
+      expect(rootFiles.sort()).toEqual(['assets', 'index.html', 'roadmap-report.md', 'src', 'styles.css']);
+      expect((await readdir(join(outputDirectory, 'assets'))).sort()).toEqual(['sweet-city-logo.png', 'sweet-city-mark.png']);
       expect(sourceFiles.sort()).toEqual(['app.js', 'client.js', 'config.js', 'domain.js', 'roadmap.js']);
       expect(config).toContain('SUPABASE_URL = "https://audit-project.supabase.co"');
       expect(config).toContain('SUPABASE_ANON_KEY = "public-anon-key"');

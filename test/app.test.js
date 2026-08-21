@@ -165,6 +165,23 @@ describe('roadmap-only DOM client', () => {
     app.stop();
   });
 
+  test('expands and collapses every strategy section through the action buttons', async () => {
+    const { app, dom } = await setup();
+    const { document } = dom.window;
+    document.querySelector('#roadmap-strategy-tab').click();
+    const sections = [...document.querySelectorAll('#roadmap-strategy-disclosures details')];
+
+    document.querySelector('#expand-roadmap-strategy').click();
+    expect(sections.every((section) => section.open)).toBe(true);
+    expect(sections.every((section) => section.classList.contains('is-opening'))).toBe(true);
+
+    document.querySelector('#collapse-roadmap-strategy').click();
+    expect(sections.every((section) => section.classList.contains('is-closing'))).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    expect(sections.every((section) => !section.open)).toBe(true);
+    app.stop();
+  });
+
   test('sends immutable task and board comments as plain text', async () => {
     const { app, calls, dom } = await setup();
     const { document } = dom.window;

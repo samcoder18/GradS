@@ -232,14 +232,19 @@ describe('chat input contracts', () => {
 });
 
 describe('static app foundation', () => {
-  test('places the roadmap tabs beside the desktop title and hides the summary on narrow screens', async () => {
+  test('keeps the roadmap tabs in the header and hides the summary on narrow screens', async () => {
     const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
     const styles = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
     const document = new JSDOM(html).window.document;
 
-    expect(document.querySelector('.hero-row .view-tabs')).not.toBeNull();
+    expect(document.querySelector('header .view-tabs')).not.toBeNull();
+    expect(document.querySelector('.hero-row .view-tabs')).toBeNull();
     expect(document.querySelector('.hero-row .lede')).not.toBeNull();
+    expect(document.querySelector('.brand-logo')?.getAttribute('src')).toBe('./assets/sweet-city-logo.png');
+    expect(document.querySelector('link[rel="icon"]')?.getAttribute('href')).toBe('./assets/sweet-city-mark.png');
     expect(styles).toMatch(/@media \(max-width: 720px\)[\s\S]*?\.hero-row \.lede\s*\{\s*display:\s*none;/);
+    expect(styles).toContain('@keyframes strategy-section-open');
+    expect(styles).toContain('@keyframes strategy-section-close');
   });
 
   test('provides semantic landmarks and announced application status', async () => {
